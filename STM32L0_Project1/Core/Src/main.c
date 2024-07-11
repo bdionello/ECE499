@@ -31,6 +31,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define pulse_max 630 // 640 is counter period
+#define pulse_min 10
 
 /* USER CODE END PD */
 
@@ -41,31 +43,40 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc;
+DMA_HandleTypeDef hdma_adc;
 
 SPI_HandleTypeDef hspi1;
 
+TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim21;
 
 TSC_HandleTypeDef htsc;
 
 /* USER CODE BEGIN PV */
 
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TSC_Init(void);
 static void MX_ADC_Init(void);
 static void MX_TIM21_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
+static int PWM_DC_Step(int dir, int size);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+uint32_t aResultDMA[4];
+uint32_t ADC_COUNT = 0;
+uint32_t ADC_DMA_HALF_COUNT = 0;
 /* USER CODE END 0 */
 
 /**
@@ -76,6 +87,10 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+	/* Converted value declaration */
+	uint32_t ConvertedValue;
+	/* Input voltage declaration */
+	uint32_t InputVoltage;
 
   /* USER CODE END 1 */
 
@@ -97,12 +112,16 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_SPI1_Init();
   MX_TSC_Init();
   MX_ADC_Init();
   MX_TIM21_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 
+  int mode = 0;
+  uint32_t adcSamples[4];
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -112,6 +131,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	HAL_Delay(10);
+	if(PWM_DC_Step(mode, 1)){
+		mode ^= 1;
+	}
+	adcSamples[0] = aResultDMA[0];
+	adcSamples[1] = aResultDMA[1];
+	adcSamples[2] = aResultDMA[2];
+	adcSamples[3] = aResultDMA[3];
+
   }
   /* USER CODE END 3 */
 }
@@ -186,11 +214,11 @@ static void MX_ADC_Init(void)
   hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc.Init.ContinuousConvMode = DISABLE;
-  hadc.Init.DiscontinuousConvMode = DISABLE;
-  hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc.Init.DMAContinuousRequests = DISABLE;
-  hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc.Init.DiscontinuousConvMode = ENABLE;
+  hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T6_TRGO;
+  hadc.Init.DMAContinuousRequests = ENABLE;
+  hadc.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc.Init.LowPowerAutoWait = DISABLE;
   hadc.Init.LowPowerFrequencyMode = DISABLE;
@@ -233,7 +261,7 @@ static void MX_ADC_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC_Init 2 */
-
+  HAL_ADC_Start_DMA(&hadc, aResultDMA, 4);
   /* USER CODE END ADC_Init 2 */
 
 }
@@ -273,6 +301,48 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 0;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 65535;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+  if(HAL_TIM_Base_Start(&htim6) != HAL_OK)
+  {
+    /* Starting Error */
+	Error_Handler();
+  }
+  /* USER CODE END TIM6_Init 2 */
 
 }
 
@@ -321,7 +391,7 @@ static void MX_TIM21_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 160;
+  sConfigOC.Pulse = 320;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim21, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -384,6 +454,22 @@ static void MX_TSC_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -429,6 +515,40 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+// function definitions funcdef
+
+/* increments the duty cycle of the PWM in direction "dir" by value "size"
+ * @ param dir = 1 for up, 0 for down
+ * @ param size is increment value
+ * @ returns 0 for success, 1 if limit is hit */
+static int PWM_DC_Step(int dir, int size){
+	int status = 0;
+	int pulse = TIM21->CCR1;
+	if(dir){
+		pulse += size;
+	}
+	else{
+		pulse -= size;
+	}
+  	if (pulse >= pulse_max) {
+  		pulse = pulse_max;
+  		status = 1;
+  	}
+  	if (pulse <= pulse_min) {
+  		pulse = pulse_min;
+  		status = 1;
+  	}
+	TIM21->CCR1 = pulse;
+	return status;
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+	ADC_COUNT++;
+}
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc){
+	ADC_DMA_HALF_COUNT++;
+}
 
 /* USER CODE END 4 */
 
