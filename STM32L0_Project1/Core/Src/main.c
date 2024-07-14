@@ -55,6 +55,8 @@ TSC_HandleTypeDef htsc;
 
 /* USER CODE BEGIN PV */
 
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,6 +71,7 @@ static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 static int PWM_DC_Step(int dir, int size);
 static int inc_Con(int *voltage, int *current);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -85,6 +88,7 @@ uint32_t ADC_DMA_HALF_COUNT = 0;
 int main(void) {
 
 	/* USER CODE BEGIN 1 */
+
 	/* Converted value declaration */
 	uint32_t ConvertedValue;
 	/* Input voltage declaration */
@@ -248,7 +252,6 @@ static void MX_ADC_Init(void) {
 	/* USER CODE BEGIN ADC_Init 2 */
 	HAL_ADC_Start_DMA(&hadc, aResultDMA, 4);
 	/* USER CODE END ADC_Init 2 */
-
 }
 
 /**
@@ -284,9 +287,7 @@ static void MX_SPI1_Init(void) {
 	/* USER CODE BEGIN SPI1_Init 2 */
 
 	/* USER CODE END SPI1_Init 2 */
-
 }
-
 /**
  * @brief TIM6 Initialization Function
  * @param None
@@ -382,7 +383,6 @@ static void MX_TIM21_Init(void) {
 
 	/* USER CODE END TIM21_Init 2 */
 	HAL_TIM_MspPostInit(&htim21);
-
 }
 
 /**
@@ -514,7 +514,6 @@ static int PWM_DC_Step(int dir, int size) {
 	TIM21->CCR1 = pulse;
 	return status;
 }
-
 /* MPPT Algorithm
  * @Takes a pointer to the voltage and current from the output
  * @of the solar panel and performs the incremental conductance algorithm.
@@ -597,6 +596,7 @@ static int inc_Con(int *voltage, int *current) {
 	}
 	}
 	return (status);
+
 }
 
 /* USER CODE END 4 */
