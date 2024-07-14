@@ -1,0 +1,21 @@
+@startuml UML
+
+scale 600 width
+[*] -> START
+START --> IDLE : VBAT_OK/\nload_on()
+START --> CHARGE : VSOL_OK
+IDLE --> CHARGE : VSOL_OK
+IDLE --> START : VBAT_LOW/\nload_off()
+state CHARGE {
+    MPPT : charge_mppt()
+    TOPPING : charge_topping()
+    FLOAT : charge_float()
+    [*] --> MPPT
+    
+    MPPT --> TOPPING : VBAT_HIGH
+    TOPPING --> FLOAT : IBAT_LOW
+}
+MPPT --> MPPT : VBAT_OK/\nload_on()
+CHARGE --> IDLE : VSOL_LOW/\npwm_off()
+FLOAT --> MPPT : VBAT_LOW/\nload_off()
+@enduml
