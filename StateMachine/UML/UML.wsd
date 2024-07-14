@@ -1,0 +1,23 @@
+@startuml
+scale 600 width
+[*] -> START
+START --> IDLE : VBAT_OK/\nload_on()
+START --> CHARGE : VBAT_LOW_VSOL_OK
+'START --> START : VSOL_LOW
+IDLE --> CHARGE : VBAT_OK_VSOL_OK
+IDLE --> START : VBAT_LOW/\nload_off()
+'IDLE --> IDLE : VBAT_OK
+state CHARGE {
+    MPPT : charge_mppt()
+    TOPPING : charge_topping()
+    FLOAT : charge_float()
+    [*] --> MPPT
+    
+    MPPT --> TOPPING : VBAT_HIGH
+    TOPPING --> FLOAT : IBAT_LOW
+}
+MPPT --> MPPT : VBAT_OK_SOL_OK/\nload_on()
+CHARGE --> IDLE : VSOL_LOW/\npwm_off()
+FLOAT --> MPPT : VBAT_LOW_VSOL_OK/\nload_off()
+
+@enduml
