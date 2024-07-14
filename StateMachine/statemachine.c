@@ -1,7 +1,12 @@
+#include <cstdio>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
-typedef enum { BAT_OK_SOL_LOW , SOL_OK, SOL_OK_BAT_HIGH, ALL_LOW, MAX_EVENT } Event ;
-typedef enum { IDLE , CHARGE_MPPT, CHARGE_TOPPING, CHARGE_FLOAT, MAX_STATE } State ;
+# define RAND_MAX 5
+
+typedef enum { VBAT_LOW, VBAT_OK, VBAT_HIGH, VSOL_LOW, VSOL_OK, IBAT_LOW, MAX_EVENT } Event ;
+typedef enum { START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE } State ;
 typedef enum { OFF, ON } Run_state; 
 typedef void (* Action ) ( void) ;
 typedef struct {
@@ -9,54 +14,63 @@ Action to_do ; // function pointer to current-state action
 State next_state ; // next-state enumerator
 } Table_Cell ;
 
+void do_nothing( void );
+void pwm_off( void );
+void charge_m ( void );
+void charge_t ( void );
+void charge_f ( void );
+void update_all( void );
+void load_on ( void );
+void load_off ( void );
 
-void pwm_off( void ){
-    // Turn off PWM
+Table_Cell state_table [ MAX_STATE][ MAX_EVENT ] = {  
+/*    [0] VBAT_LOW                     [1] VBAT_OK             [2] VBAT_HIGH             [3] VSOL_LOW             [4] VSOL_OK                      [5] IBAT_LOW     <--EVENTS |         STATES */  
+{ { do_nothing , START }, {  load_off , IDLE }, { do_nothing , START }, { do_nothing , START }, { do_nothing , CHARGE_M }, { do_nothing , START } } ,       // START
+{ { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , IDLE } } ,           // IDLE
+{ { do_nothing , CHARGE_M }, { load_on , CHARGE_M }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} } , // CHARGE_M
+{ { do_nothing , CHARGE_T }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F } } ,// CHARGE_T
+{ { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } } , // CHARGE_F
+};
+/* main.c */
+int main(int argc, char *argv[]) {
+    Table_Cell state_cell ;
+    Event current_event ;
+    State current_state ;
+    current_state = START ; // initial state
+    while(1){    
+    current_event = rand();
+    printf("Current Event: %d \n", current_event);
+    printf("Current State: %d \n", current_state);        
+    state_cell = state_table [ current_state ][ current_event ];    
+    state_cell . to_do () ; // execute the appropriate action
+    current_state = state_cell . next_state ; // transition to the new state
+    }    
 }
-void switch_load ( int state ){
-    if (state) {
-        // turn load On
-    }
-    else {
-        // turn load Off
-    }   
+void pwm_off( void ){    
+    // Turn off PWM
+    printf("pwm_off\n"); 
+}
+void load_on ( void ){
+    // Turn load on GPIO PIN
+    printf("load_on\n"); 
+}
+void load_off ( void ){
+    // Turn load off GPIO PIN
+    printf("load_off\n"); 
 }
 void do_nothing( void ){
-    printf("Nothing \n");
+    printf("do_nothing\n");
 }
-
-void do_idle ( void ){
-    printf("Idle \n"); 
-    pwm_off();
-    switch_load(ON);
+void charge_m ( void ){
+    printf("Charg_m \n"); 
 }
-void do_charge_mppt ( void ){
-    printf("Charge \n"); 
+void charge_t ( void ){
+    printf("Charge_t \n"); 
 }
-void do_charge_topping ( void ){
-    printf("Charge \n"); 
-}
-void do_charge_float ( void ){
-    printf("Charge \n"); 
-}
-void halt ( void ){
-    pwm_off();
-    switch_load(OFF);
+void charge_f ( void ){
+    printf("Charge_f \n"); 
 }
 void update_all( void ){
     // update inputs
     // update events
-}
-
-Table_Cell Table [ MAX_STATE][ MAX_EVENT ] = {  
-/*  BAT_OK_SOL_LOW                 SOL_OK                         SOL_OK_BAT_HIGH                 ALL LOW               */
-{ { do_idle , IDLE } , { do_charge_mppt , CHARGE_MPPT }, { do_charge_float , CHARGE_FLOAT }, { halt , IDLE } } ,         // IDLE
-{ { do_idle , IDLE } , { do_charge_mppt , CHARGE_MPPT }, { do_charge_topping , CHARGE_TOPPING }, { halt , IDLE } } ,     // CHARGE_MPPT
-{ { do_idle , IDLE } , { do_charge_topping , CHARGE_TOPPING }, { do_nothing , CHARGE_TOPPING }, { halt , IDLE } } ,      // CHARGE_TOPPING
-{ { do_idle , IDLE } , { do_charge_float , CHARGE_FLOAT }, { do_nothing , CHARGE_TOPPING }, { halt , IDLE } } ,          // CHARGE_FLOAT
-};
-
-/* main.c */
-int main(int argc, char *argv[]) {
-    printf("Hello");    
 }
