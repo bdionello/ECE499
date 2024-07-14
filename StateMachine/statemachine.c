@@ -23,7 +23,7 @@ void load_on ( void );
 void load_off ( void );
 
 Table_Cell state_table [ MAX_STATE][ MAX_EVENT ] = {  
-/*    [0] VBAT_LOW                     [1] VBAT_OK             [2] VBAT_HIGH             [3] VSOL_LOW             [4] VSOL_OK                      [5] IBAT_LOW     <--EVENTS |         STATES */  
+/*    [0] VBAT_LOW             [1] VBAT_OK             [2] VBAT_HIGH             [3] VSOL_LOW             [4] VSOL_OK                [5] IBAT_LOW     <--EVENTS |         STATES */  
 { { do_nothing , START }, {  load_off , IDLE }, { do_nothing , START }, { do_nothing , START }, { do_nothing , CHARGE_M }, { do_nothing , START } } ,       // START
 { { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , IDLE } } ,           // IDLE
 { { do_nothing , CHARGE_M }, { load_on , CHARGE_M }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} } , // CHARGE_M
