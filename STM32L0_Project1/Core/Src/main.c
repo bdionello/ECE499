@@ -41,9 +41,15 @@ typedef struct {
 #define pulse_max 630 // 640 is counter period
 #define pulse_min 10
 #define ADC_MAX 4095
+#define VSOL_MAX 25
+#define VBAT_MAX 15
 #define VDDA 3.3
 #define VBAT_OK_VOLTAGE 12.5
 #define VSOL_OK_VOLTAGE 10
+#define VBAT_LOW_VOLTAGE 11.75
+#define VSOL_OK_VOLTAGE 5
+#define VBAT_HIGH_VOLTAGE 14.7
+#define IBAT_LOW_CURRENT 0.200
 
 /* USER CODE END PD */
 
@@ -149,8 +155,8 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 	int mode = 0;
-	int voltage = rand() % (10 + 1 - 1) + 1;  //Rand is used to simulate ADC reads. Replace with actual reads for production code.
-	int current = rand() % (10 + 1 - 1) + 1;
+	//int voltage = rand() % (10 + 1 - 1) + 1;  //Rand is used to simulate ADC reads. Replace with actual reads for production code.
+	//int current = rand() % (10 + 1 - 1) + 1;
 	int *voltPtr = &voltage;
 	int *currentPtr = &current;
   /* USER CODE END 2 */
@@ -159,10 +165,25 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 	while (1) {
 		HAL_Delay(10);
-		int result = inc_Con(voltPtr, currentPtr);
-        state_cell = state_table [ current_state ][ input ];
+		current_event = update_events(current_state);
+		*voltPtr = v_sol;
+		*currentPtr = i_sol;
+        state_cell = state_table [ current_state ][ current_event ];
         state_cell . to_do () ; // execute the appropriate action
         current_state = state_cell . next_state ; // transition to the new state
+		switch(current_state){
+			case CHARGE_M:
+				int result = inc_Con(voltPtr, currentPtr);
+				break;
+			case CHARGE_T:
+				charge_t();
+				break;
+			case CHARGE_F:
+				charge_f();
+				break;
+			default:
+				break;
+		}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -640,10 +661,6 @@ static int inc_Con(int *voltage, int *current) {
 	}
 	return (status);
 }
-#define VBAT_LOW_VOLTAGE 11.75
-#define VSOL_OK_VOLTAGE 5
-#define VBAT_HIGH_VOLTAGE 14.7
-#define IBAT_LOW_CURRENT 0.200
 /*    [0] VBAT_LOW    [1] VBAT_O   [2] VBAT_HIGH  [3] VSOL_LOW     [4] VSOL_OK  [5] IBAT_LOW     <--EVENTS | STATES */
 Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE
 	update_inputs();
@@ -688,7 +705,7 @@ Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE_T, CHA
 				return VSOL_LOW;
 			}
 		default:
-			return VSOL_LOW; // this is a bad default Event, need a "nothing Event" -> go back to start
+			return MAX_EVENT; // this is a bad default Event, need a "nothing Event"
 			break;
 	}
 }
@@ -717,9 +734,6 @@ void load_off ( void ){
 void do_nothing( void ){
     printf("do_nothing\n");
 }
-void charge_m ( void ){
-    printf("Charg_m \n");
-}
 void charge_t ( void ){
     printf("Charge_t \n");
 }
@@ -727,12 +741,11 @@ void charge_f ( void ){
     printf("Charge_f \n");
 }
 void update_inputs( void ){
-    // update inputs
-	v_sol = (aResultDMA[0]*15)/ADC_MAX;
+    // update inputs from ADC values
+	v_sol = (aResultDMA[0]*VSOL_MAX)/ADC_MAX;
 	i_sol = (aResultDMA[1]*VDDA)/ADC_MAX;
-	v_bat = (aResultDMA[2]*15)/ADC_MAX;
+	v_bat = (aResultDMA[2]*VBAT_MAX)/ADC_MAX;
 	i_bat = (aResultDMA[3]*VDDA)/ADC_MAX;
-    // update events
 }
 /* USER CODE END 4 */
 
