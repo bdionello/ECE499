@@ -14,6 +14,7 @@ const char* event_names[] = { "VBAT_LOW", "VBAT_OK", "VBAT_HIGH", "VSOL_LOW", "V
 const char* state_names[] = { "START", "IDLE" , "CHARGE_M", "CHARGE_T", "CHARGE_F", "MAX_STATE" };
 
 void do_nothing( void );
+void pwm_on( void );
 void pwm_off( void );
 void charge_m ( void );
 void charge_t ( void );
@@ -25,7 +26,7 @@ void load_off ( void );
 Table_Cell state_table [ MAX_STATE][ MAX_EVENT ] = {  
 /*    [0] VBAT_LOW             [1] VBAT_OK             [2] VBAT_HIGH             [3] VSOL_LOW             [4] VSOL_OK                [5] IBAT_LOW     <--EVENTS |         STATES */  
 { { do_nothing , START }, {  load_off , IDLE }, { do_nothing , START }, { do_nothing , START }, { do_nothing , CHARGE_M }, { do_nothing , START } } ,       // START
-{ { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , IDLE } } ,           // IDLE
+{ { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { pwm_on , CHARGE_M }, { do_nothing , IDLE } } ,           // IDLE
 { { do_nothing , CHARGE_M }, { load_on , CHARGE_M }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} } , // CHARGE_M
 { { do_nothing , CHARGE_T }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F } } ,// CHARGE_T
 { { do_nothing , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } } , // CHARGE_F
@@ -46,6 +47,10 @@ int main(int argc, char *argv[]) {
         current_state = state_cell . next_state ; // transition to the new state
         printf("Next State: %s \n", state_names[current_state]);
     };   
+}
+void pwm_on( void ){    
+    // Turn on PWM
+    printf("pwm_on\n"); 
 }
 void pwm_off( void ){    
     // Turn off PWM
