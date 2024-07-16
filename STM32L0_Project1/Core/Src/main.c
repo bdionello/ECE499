@@ -27,7 +27,13 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum { VBAT_LOW, VBAT_OK, VBAT_HIGH, VSOL_LOW, VSOL_OK, IBAT_LOW, MAX_EVENT } Event ;
+typedef enum { START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE } State ;
+typedef void (* Action ) ( void) ;
+typedef struct {
+	Action to_do ; // function pointer to current-state action
+	State next_state ; // next-state enumerator
+} Table_Cell ;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -45,18 +51,23 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc;
 DMA_HandleTypeDef hdma_adc;
-
 SPI_HandleTypeDef hspi1;
-
 TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim21;
-
 TSC_HandleTypeDef htsc;
 
 /* USER CODE BEGIN PV */
-
-
-
+uint32_t aResultDMA[4];
+uint32_t ADC_COUNT = 0;
+uint32_t ADC_DMA_HALF_COUNT = 0;
+Table_Cell state_table [ MAX_STATE][ MAX_EVENT ] = {
+/*    [0] VBAT_LOW           [1] VBAT_OK                [2] VBAT_HIGH              [3] VSOL_LOW           [4] VSOL_OK                [5] IBAT_LOW     <--EVENTS | STATES */
+{ { do_nothing , START },    {  load_off , IDLE },      { do_nothing , START },    { do_nothing , START },{ do_nothing , CHARGE_M }, { do_nothing , START } } ,   // START
+{ { load_off , START },      { do_nothing , IDLE },     { do_nothing , IDLE },     { do_nothing , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , IDLE } } ,    // IDLE
+{ { do_nothing , CHARGE_M }, { load_on , CHARGE_M },    { do_nothing , CHARGE_T }, { pwm_off , IDLE },    { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} } , // CHARGE_M
+{ { do_nothing , CHARGE_T }, { do_nothing , CHARGE_T  },{ do_nothing , CHARGE_T }, { pwm_off , IDLE },    { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F } } ,// CHARGE_T
+{ { do_nothing , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE },    { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } } ,// CHARGE_F
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,14 +82,19 @@ static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 static int PWM_DC_Step(int dir, int size);
 static int inc_Con(int *voltage, int *current);
-
+static void do_nothing( void );
+static void pwm_off( void );
+static void charge_m ( void );
+static void charge_t ( void );
+static void charge_f ( void );
+static void update_all( void );
+static void load_on ( void );
+static void load_off ( void );
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint32_t aResultDMA[4];
-uint32_t ADC_COUNT = 0;
-uint32_t ADC_DMA_HALF_COUNT = 0;
+
 /* USER CODE END 0 */
 
 /**
@@ -88,12 +104,14 @@ uint32_t ADC_DMA_HALF_COUNT = 0;
 int main(void) {
 
 	/* USER CODE BEGIN 1 */
-
 	/* Converted value declaration */
 	uint32_t ConvertedValue;
 	/* Input voltage declaration */
 	uint32_t InputVoltage;
-
+    Table_Cell state_cell ;
+    Event current_event ;
+    State current_state ;
+    current_state = START ; // initial state
 	/* USER CODE END 1 */
 
 	/* MCU Configuration--------------------------------------------------------*/
@@ -119,8 +137,8 @@ int main(void) {
 	MX_ADC_Init();
 	MX_TIM21_Init();
 	MX_TIM6_Init();
-	/* USER CODE BEGIN 2 */
 
+	/* USER CODE BEGIN 2 */
 	int mode = 0;
 	int voltage = rand() % (10 + 1 - 1) + 1;  //Rand is used to simulate ADC reads. Replace with actual reads for production code.
 	int current = rand() % (10 + 1 - 1) + 1;
@@ -132,13 +150,13 @@ int main(void) {
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
-		/* USER CODE END WHILE */
-
-		/* USER CODE BEGIN 3 */
 		HAL_Delay(10);
 		int result = inc_Con(voltPtr, currentPtr);
-
-	}
+        state_cell = state_table [ current_state ][ input ];
+        state_cell . to_do () ; // execute the appropriate action
+        current_state = state_cell . next_state ; // transition to the new state
+	}/* USER CODE END WHILE */
+	/* USER CODE BEGIN 3 */
 	/* USER CODE END 3 */
 }
 
@@ -286,6 +304,7 @@ static void MX_SPI1_Init(void) {
 	}
 	/* USER CODE BEGIN SPI1_Init 2 */
 
+
 	/* USER CODE END SPI1_Init 2 */
 }
 /**
@@ -324,7 +343,6 @@ static void MX_TIM6_Init(void) {
 		Error_Handler();
 	}
 	/* USER CODE END TIM6_Init 2 */
-
 }
 
 /**
@@ -599,6 +617,34 @@ static int inc_Con(int *voltage, int *current) {
 
 }
 
+void pwm_off( void ){
+    // Turn off PWM
+    printf("pwm_off\n");
+}
+void load_on ( void ){
+    // Turn load on GPIO PIN
+    printf("load_on\n");
+}
+void load_off ( void ){
+    // Turn load off GPIO PIN
+    printf("load_off\n");
+}
+void do_nothing( void ){
+    printf("do_nothing\n");
+}
+void charge_m ( void ){
+    printf("Charg_m \n");
+}
+void charge_t ( void ){
+    printf("Charge_t \n");
+}
+void charge_f ( void ){
+    printf("Charge_f \n");
+}
+void update_all( void ){
+    // update inputs
+    // update events
+}
 /* USER CODE END 4 */
 
 /**
