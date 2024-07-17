@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef enum { VBAT_LOW, VBAT_OK, VBAT_HIGH, VSOL_LOW, VSOL_OK, IBAT_LOW, MAX_EVENT } Event ;
+typedef enum { VBAT_LOW, VBAT_OK, VBAT_HIGH, VSOL_LOW, VSOL_OK, IBAT_LOW, NOTHING, MAX_EVENT } Event ;
 typedef enum { START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE } State ;
 typedef enum { OFF, ON } Run_state; 
 typedef void (* Action ) ( void) ;
@@ -10,7 +10,7 @@ Action to_do ; // function pointer to current-state action
 State next_state ; // next-state enumerator
 } Table_Cell ;
 
-const char* event_names[] = { "VBAT_LOW", "VBAT_OK", "VBAT_HIGH", "VSOL_LOW", "VSOL_OK", "IBAT_LOW"};
+const char* event_names[] = { "VBAT_LOW", "VBAT_OK", "VBAT_HIGH", "VSOL_LOW", "VSOL_OK", "IBAT_LOW", "NOTHING"};
 const char* state_names[] = { "START", "IDLE" , "CHARGE_M", "CHARGE_T", "CHARGE_F", "MAX_STATE" };
 
 void do_nothing( void );
@@ -24,12 +24,12 @@ void load_on ( void );
 void load_off ( void );
 
 Table_Cell state_table [ MAX_STATE][ MAX_EVENT ] = {  
-/*    [0] VBAT_LOW             [1] VBAT_OK             [2] VBAT_HIGH             [3] VSOL_LOW             [4] VSOL_OK                [5] IBAT_LOW     <--EVENTS |         STATES */  
-{ { do_nothing , START }, {  load_off , IDLE }, { do_nothing , START }, { do_nothing , START }, { do_nothing , CHARGE_M }, { do_nothing , START } } ,       // START
-{ { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { pwm_on , CHARGE_M }, { do_nothing , IDLE } } ,           // IDLE
-{ { do_nothing , CHARGE_M }, { load_on , CHARGE_M }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} } , // CHARGE_M
-{ { do_nothing , CHARGE_T }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F } } ,// CHARGE_T
-{ { do_nothing , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } } , // CHARGE_F
+/*    [0] VBAT_LOW             [1] VBAT_OK             [2] VBAT_HIGH             [3] VSOL_LOW             [4] VSOL_OK                [5] IBAT_LOW                        [6] NOTHING <--EVENTS |    STATES */  
+{ { do_nothing , START }, {  load_on , IDLE }, { do_nothing , START }, { do_nothing , START }, { pwm_on , CHARGE_M }, { do_nothing , START }, { do_nothing , START }  } ,       // START
+{ { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { pwm_on , CHARGE_M }, { do_nothing , IDLE } , { do_nothing , IDLE } },           // IDLE
+{ { load_off , CHARGE_M }, { load_on , CHARGE_M }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} , { do_nothing , CHARGE_M } }, // CHARGE_M
+{ { load_off , CHARGE_M }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_T } } ,// CHARGE_T
+{ { load_off , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } , { do_nothing , CHARGE_F } } // CHARGE_F
 };
 /* main.c */
 int main(int argc, char *argv[]) {

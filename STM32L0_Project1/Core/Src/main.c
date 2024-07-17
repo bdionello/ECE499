@@ -23,11 +23,12 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum { VBAT_LOW, VBAT_OK, VBAT_HIGH, VSOL_LOW, VSOL_OK, IBAT_LOW, MAX_EVENT } Event ;
+typedef enum { VBAT_LOW, VBAT_OK, VBAT_HIGH, VSOL_LOW, VSOL_OK, IBAT_LOW, NOTHING, MAX_EVENT } Event ;
 typedef enum { START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE } State ;
 typedef void (* Action ) ( void) ;
 typedef struct {
@@ -41,15 +42,16 @@ typedef struct {
 #define pulse_max 630 // 640 is counter period
 #define pulse_min 10
 #define ADC_MAX 4095
-#define VSOL_MAX 25
-#define VBAT_MAX 15
+#define VSOL_MAX 25.0
+#define VBAT_MAX 15.0
 #define VDDA 3.3
 #define VBAT_OK_VOLTAGE 12.5
-#define VSOL_OK_VOLTAGE 10
 #define VBAT_LOW_VOLTAGE 11.75
-#define VSOL_OK_VOLTAGE 5
+#define VSOL_OK_VOLTAGE 5.0
 #define VBAT_HIGH_VOLTAGE 14.7
 #define IBAT_LOW_CURRENT 0.200
+#define VOLTAGE_TOPPING 14.2
+#define VOLTAGE_FLOAT 13.5
 
 /* USER CODE END PD */
 
@@ -71,15 +73,7 @@ TSC_HandleTypeDef htsc;
 
 /* USER CODE BEGIN PV */
 uint32_t aResultDMA[4];
-uint32_t v_sol, v_bat, i_sol, i_bat;
-Table_Cell state_table [ MAX_STATE ][ MAX_EVENT ] = {
-/*    [0] VBAT_LOW           [1] VBAT_OK                [2] VBAT_HIGH              [3] VSOL_LOW           [4] VSOL_OK                [5] IBAT_LOW     <--EVENTS | STATES */
-{ { do_nothing , START },    {  load_off , IDLE },      { do_nothing , START },    { do_nothing , START },{ pwm_on , CHARGE_M }, { do_nothing , START } } ,   // START
-{ { load_off , START },      { do_nothing , IDLE },     { do_nothing , IDLE },     { do_nothing , IDLE }, { pwm_on , CHARGE_M }, { do_nothing , IDLE } } ,    // IDLE
-{ { do_nothing , CHARGE_M }, { load_on , CHARGE_M },    { do_nothing , CHARGE_T }, { pwm_off , IDLE },    { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} } , // CHARGE_M
-{ { do_nothing , CHARGE_T }, { do_nothing , CHARGE_T  },{ do_nothing , CHARGE_T }, { pwm_off , IDLE },    { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F } } ,// CHARGE_T
-{ { do_nothing , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE },    { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } } ,// CHARGE_F
-};
+float v_sol, v_bat, i_sol, i_bat;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -93,21 +87,29 @@ static void MX_TIM21_Init(void);
 static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 static int PWM_DC_Step(int dir, int size);
-static int inc_Con(int *voltage, int *current);
+static int inc_Con(uint32_t  *voltage, uint32_t  *current);
 static void do_nothing( void );
 static void pwm_on( void );
 static void pwm_off( void );
-static void charge_m ( void );
 static void charge_t ( void );
 static void charge_f ( void );
 static void update_inputs( void );
+static Event update_events( State current_s );
 static void load_on ( void );
 static void load_off ( void );
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+Table_Cell state_table [ MAX_STATE ][ MAX_EVENT ] = {
+	/*[0] VBAT_LOW            [1] VBAT_OK           [2] VBAT_HIGH           [3] VSOL_LOW            [4] VSOL_OK            5] IBAT_LOW             [6] NOTHING <--EVENTS |                  STATES */
+	{ { do_nothing , START }, {  load_on , IDLE }, { do_nothing , START }, { do_nothing , START }, { pwm_on , CHARGE_M }, { do_nothing , START }, { do_nothing , START }  } ,             // START
+	{ { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { pwm_on , CHARGE_M }, { do_nothing , IDLE } , { do_nothing , IDLE } },                   // IDLE
+	{ { load_off , CHARGE_M }, { load_on , CHARGE_M }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} , { do_nothing , CHARGE_M } }, // CHARGE_M
+	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_T } } ,// CHARGE_T
+	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } , { do_nothing , CHARGE_F } } // CHARGE_F
+	};
+/*
 /* USER CODE END 0 */
 
 /**
@@ -118,11 +120,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	/* Converted value declaration */
-	uint32_t ConvertedValue;
-	/* Input voltage declaration */
-	uint32_t InputVoltage;
-
 	/* State machine variables*/
     Table_Cell state_cell ;
     Event current_event ;
@@ -134,7 +131,6 @@ int main(void)
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
   /* USER CODE BEGIN Init */
   /* USER CODE END Init */
 
@@ -142,7 +138,6 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-	uint8_t ret = BSP_EPD_Init();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -154,11 +149,10 @@ int main(void)
   MX_TIM21_Init();
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
-	int mode = 0;
 	//int voltage = rand() % (10 + 1 - 1) + 1;  //Rand is used to simulate ADC reads. Replace with actual reads for production code.
 	//int current = rand() % (10 + 1 - 1) + 1;
-	int *voltPtr = &voltage;
-	int *currentPtr = &current;
+	uint32_t *voltPtr = &aResultDMA[0];
+	uint32_t *currentPtr = &aResultDMA[1];
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -166,11 +160,10 @@ int main(void)
 	while (1) {
 		HAL_Delay(10);
 		current_event = update_events(current_state);
-		*voltPtr = v_sol;
-		*currentPtr = i_sol;
+
         state_cell = state_table [ current_state ][ current_event ];
-        state_cell . to_do () ; // execute the appropriate action
-        current_state = state_cell . next_state ; // transition to the new state
+        state_cell . to_do() ; // execute the appropriate action
+        current_state = state_cell.next_state ; // transition to the new state
 		switch(current_state){
 			case CHARGE_M:
 				int result = inc_Con(voltPtr, currentPtr);
@@ -184,6 +177,7 @@ int main(void)
 			default:
 				break;
 		}
+	}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -489,7 +483,6 @@ static void MX_TSC_Init(void)
   /* USER CODE BEGIN TSC_Init 2 */
 
   /* USER CODE END TSC_Init 2 */
-
 }
 
 /**
@@ -582,7 +575,7 @@ static int PWM_DC_Step(int dir, int size) {
  * @Takes a pointer to the voltage and current from the output
  * @of the solar panel and performs the incremental conductance algorithm.
  * @Modifies the PWM output based on dV and dI.  */
-static int inc_Con(int *voltage, int *current) {
+static int inc_Con(uint32_t  *voltage, uint32_t  *current) {
 	char exit = 0;
 	char status = 0;
 	char state = 0;
@@ -590,11 +583,11 @@ static int inc_Con(int *voltage, int *current) {
 	int dI = 0;
 	float dIdV = 0;
 	float IV = 0;
-	int oldVolt = *voltage;
-	int oldCurrent = *current;
+	uint32_t  oldVolt = *voltage;
+	uint32_t  oldCurrent = *current;
 	HAL_Delay(1000);
-	*voltage = rand() % (10 + 1 - 1) + 1; // Rand is used to simulate ADC reads. Replace with actual reads for production code.
-	*current = rand() % (10 + 1 - 1) + 1;
+	*voltage = aResultDMA[0];
+	*current = aResultDMA[1];
 	dV = *voltage - oldVolt;
 	dI = *current - oldCurrent;
 	dIdV = dI/dV;
@@ -661,53 +654,59 @@ static int inc_Con(int *voltage, int *current) {
 	}
 	return (status);
 }
-/*    [0] VBAT_LOW    [1] VBAT_O   [2] VBAT_HIGH  [3] VSOL_LOW     [4] VSOL_OK  [5] IBAT_LOW     <--EVENTS | STATES */
-Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE
+/*    [0] VBAT_LOW    [1] VBAT_OK   [2] VBAT_HIGH  [3] VSOL_LOW     [4] VSOL_OK    [5] IBAT_LOW     <--EVENTS | STATES */
+static Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE
 	update_inputs();
+	Event return_event = NOTHING;
 	switch(current_s) {
 		case START:
 			if(v_bat >= VBAT_OK_VOLTAGE){
-				return VBAT_OK;
+				return_event=  VBAT_OK;
 			}
 			else if(v_sol >= VSOL_OK_VOLTAGE){
-				return VSOL_OK;
+				return_event = VSOL_OK;
 			}
 			break;
 		case IDLE:
 			if(v_bat < VBAT_LOW_VOLTAGE){
-				return VBAT_LOW;
+				return_event = VBAT_LOW;
 			}
 			else if(v_sol >= VSOL_OK_VOLTAGE){
-				return VSOL_OK;
+				return_event = VSOL_OK;
 			}
+			break;
 		case CHARGE_M:
-			if(v_bat >= VBAT_OK_VOLTAGE){
-				return VBAT_OK;
+			if(v_bat >= VBAT_HIGH_VOLTAGE){
+				return_event = VBAT_HIGH;
 			}
 			else if(v_sol < VSOL_OK_VOLTAGE){
-				return VSOL_LOW;
+				return_event = VSOL_LOW;
 			}
-			else if(v_bat >= VBAT_HIGH_VOLTAGE){
-				return VBAT_HIGH;
+			else if(v_bat >= VBAT_OK_VOLTAGE){
+				return_event = VBAT_OK;
 			}
+			break;
 		case CHARGE_T:
 			if(i_bat < IBAT_LOW_CURRENT){
-				return IBAT_LOW;
+				return_event = IBAT_LOW;
 			}
 			else if(v_sol < VSOL_OK_VOLTAGE){
-				return VSOL_LOW;
+				return_event = VSOL_LOW;
 			}
+			break;
 		case CHARGE_F:
 			if(v_bat < VBAT_LOW_VOLTAGE){
-				return VBAT_LOW;
+				return_event = VBAT_LOW;
 			}
 			else if(v_sol < VSOL_OK_VOLTAGE){
-				return VSOL_LOW;
+				return_event = VSOL_LOW;
 			}
+			break;
 		default:
-			return MAX_EVENT; // this is a bad default Event, need a "nothing Event"
+			return_event = NOTHING; // maybe add a fault state
 			break;
 	}
+	return return_event;
 }
 void pwm_on( void ){
     // Turn on PWM
@@ -735,10 +734,32 @@ void do_nothing( void ){
     printf("do_nothing\n");
 }
 void charge_t ( void ){
-    printf("Charge_t \n");
+	float error;
+	float step;
+	char status;
+	update_inputs();
+	error = VOLTAGE_TOPPING - v_bat;
+	step = abs(round(error));
+	if(error > 0){
+		status = PWM_DC_Step(1, step);
+	}
+	else if (error < 0){
+		status = PWM_DC_Step(0, step);
+	}
 }
 void charge_f ( void ){
-    printf("Charge_f \n");
+	float error;
+	float step;
+	char status;
+	update_inputs();
+	error = VOLTAGE_FLOAT - v_bat;
+	step = abs(round(error));
+	if(error > 0){
+		status = PWM_DC_Step(1, step);
+	}
+	else if (error < 0){
+		status = PWM_DC_Step(0, step);
+	}
 }
 void update_inputs( void ){
     // update inputs from ADC values
