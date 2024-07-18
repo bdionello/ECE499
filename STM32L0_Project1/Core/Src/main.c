@@ -75,9 +75,11 @@ UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_tx;
 
 /* USER CODE BEGIN PV */
-__IO ITStatus UartReady = RESET;
-uint8_t aTxBuffer[] = "TESTING\n\r";
+char aTxBuffer[100];
+uint8_t aHeaderBuffer[] = "Event,State,Duty_Cycle,Voltage_Solar,Current_Solar,Voltage_Batter,Current_Battery\n";
 uint32_t aResultDMA[4];
+uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
+uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
 float v_sol, v_bat, i_sol, i_bat;
 /* USER CODE END PV */
 
@@ -115,6 +117,8 @@ Table_Cell state_table [ MAX_STATE ][ MAX_EVENT ] = {
 	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_T } } ,// CHARGE_T
 	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } , { do_nothing , CHARGE_F } } // CHARGE_F
 	};
+const char* event_names[] = { "VBAT_LOW", "VBAT_OK", "VBAT_HIGH", "VSOL_LOW", "VSOL_OK", "IBAT_LOW", "NOTHING"};
+const char* state_names[] = { "START", "IDLE" , "CHARGE_M", "CHARGE_T", "CHARGE_F", "MAX_STATE" };
 /*
 /* USER CODE END 0 */
 
@@ -131,6 +135,11 @@ int main(void)
     Event current_event ;
     State current_state ;
     current_state = START ; // initial state
+	uint32_t *voltPtr = &aResultDMA[0];
+	uint32_t *currentPtr = &aResultDMA[1];
+
+
+	int numWritten;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -157,21 +166,23 @@ int main(void)
   MX_TIM6_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-	//int voltage = rand() % (10 + 1 - 1) + 1;  //Rand is used to simulate ADC reads. Replace with actual reads for production code.
-	//int current = rand() % (10 + 1 - 1) + 1;
-	uint32_t *voltPtr = &aResultDMA[0];
-	uint32_t *currentPtr = &aResultDMA[1];
-	uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+	  if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aHeaderBuffer, HEADERBUFFERSIZE)!= HAL_OK)
+	  {
+	    Error_Handler();
+	  }
 	while (1) {
-		  if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, TXBUFFERSIZE)!= HAL_OK)
+		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, aResultDMA[0], aResultDMA[1], aResultDMA[2], aResultDMA[3]);
+		if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, TXBUFFERSIZE)!= HAL_OK)
 		  {
 		    Error_Handler();
 		  }
-		HAL_Delay(10);
+		HAL_Delay(1000);
 		current_event = update_events(current_state);
         state_cell = state_table [ current_state ][ current_event ];
         state_cell . to_do() ; // execute the appropriate action
