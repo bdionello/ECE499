@@ -65,6 +65,14 @@ void Error_Handler(void);
 #define PC15_OSC32_OUT_GPIO_Port GPIOC
 #define MCO_Pin GPIO_PIN_0
 #define MCO_GPIO_Port GPIOH
+#define V_SOLAR_Pin GPIO_PIN_0
+#define V_SOLAR_GPIO_Port GPIOA
+#define I_SOLAR_Pin GPIO_PIN_1
+#define I_SOLAR_GPIO_Port GPIOA
+#define V_BATTERY_Pin GPIO_PIN_4
+#define V_BATTERY_GPIO_Port GPIOA
+#define I_BATTERY_Pin GPIO_PIN_5
+#define I_BATTERY_GPIO_Port GPIOA
 #define ePD1_RESET_Pin GPIO_PIN_2
 #define ePD1_RESET_GPIO_Port GPIOB
 #define ePD1_PWR_ENn_Pin GPIO_PIN_10

@@ -1,36 +1,57 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2024 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2024 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum { VBAT_LOW, VBAT_OK, VBAT_HIGH, VSOL_LOW, VSOL_OK, IBAT_LOW, NOTHING, MAX_EVENT } Event ;
+typedef enum { START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE } State ;
+typedef void (* Action ) ( void) ;
+typedef struct {
+	Action to_do ; // function pointer to current-state action
+	State next_state ; // next-state enumerator
+} Table_Cell ;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define pulse_max 630 // 640 is counter period
+#define pulse_min 10
+#define ADC_MAX 4095
+#define VSOL_MAX 25.0
+#define VBAT_MAX 15.0
+#define VDDA 3.3
+#define VBAT_OK_VOLTAGE 12.5
+#define VBAT_LOW_VOLTAGE 11.75
+#define VSOL_OK_VOLTAGE 5.0
+#define VBAT_HIGH_VOLTAGE 14.7
+#define IBAT_LOW_CURRENT 0.200
+#define VOLTAGE_TOPPING 14.2
+#define VOLTAGE_FLOAT 13.5
 
 /* USER CODE END PD */
 
@@ -41,31 +62,64 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc;
+DMA_HandleTypeDef hdma_adc;
 
 SPI_HandleTypeDef hspi1;
 
+TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim21;
 
 TSC_HandleTypeDef htsc;
 
-/* USER CODE BEGIN PV */
+UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_tx;
 
+/* USER CODE BEGIN PV */
+char aTxBuffer[100];
+uint8_t aHeaderBuffer[] = "Event,State,Duty_Cycle,Voltage_Solar,Current_Solar,Voltage_Batter,Current_Battery\n";
+uint32_t aResultDMA[4];
+uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
+uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
+float v_sol, v_bat, i_sol, i_bat;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TSC_Init(void);
 static void MX_ADC_Init(void);
 static void MX_TIM21_Init(void);
+static void MX_TIM6_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+static int PWM_DC_Step(int dir, int size);
+static int inc_Con(uint32_t  *voltage, uint32_t  *current);
+static void do_nothing( void );
+static void pwm_on( void );
+static void pwm_off( void );
+static void charge_t ( void );
+static void charge_f ( void );
+static void update_inputs( void );
+static Event update_events( State current_s );
+static void load_on ( void );
+static void load_off ( void );
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+Table_Cell state_table [ MAX_STATE ][ MAX_EVENT ] = {
+	/*[0] VBAT_LOW            [1] VBAT_OK           [2] VBAT_HIGH           [3] VSOL_LOW            [4] VSOL_OK            5] IBAT_LOW             [6] NOTHING <--EVENTS |                  STATES */
+	{ { do_nothing , START }, {  load_on , IDLE }, { do_nothing , START }, { do_nothing , START }, { pwm_on , CHARGE_M }, { do_nothing , START }, { do_nothing , START }  } ,             // START
+	{ { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { pwm_on , CHARGE_M }, { do_nothing , IDLE } , { do_nothing , IDLE } },                   // IDLE
+	{ { load_off , CHARGE_M }, { load_on , CHARGE_M }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} , { do_nothing , CHARGE_M } }, // CHARGE_M
+	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_T } } ,// CHARGE_T
+	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } , { do_nothing , CHARGE_F } } // CHARGE_F
+	};
+const char* event_names[] = { "VBAT_LOW", "VBAT_OK", "VBAT_HIGH", "VSOL_LOW", "VSOL_OK", "IBAT_LOW", "NOTHING"};
+const char* state_names[] = { "START", "IDLE" , "CHARGE_M", "CHARGE_T", "CHARGE_F", "MAX_STATE" };
+/*
 /* USER CODE END 0 */
 
 /**
@@ -76,7 +130,16 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+	/* State machine variables*/
+    Table_Cell state_cell ;
+    Event current_event ;
+    State current_state ;
+    current_state = START ; // initial state
+	uint32_t *voltPtr = &aResultDMA[0];
+	uint32_t *currentPtr = &aResultDMA[1];
 
+
+	int numWritten;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -85,34 +148,62 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_SPI1_Init();
   MX_TSC_Init();
   MX_ADC_Init();
   MX_TIM21_Init();
+  MX_TIM6_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+
+	  if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aHeaderBuffer, HEADERBUFFERSIZE)!= HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+	while (1) {
+		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, aResultDMA[0], aResultDMA[1], aResultDMA[2], aResultDMA[3]);
+		if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, TXBUFFERSIZE)!= HAL_OK)
+		  {
+		    Error_Handler();
+		  }
+		HAL_Delay(1000);
+		current_event = update_events(current_state);
+        state_cell = state_table [ current_state ][ current_event ];
+        state_cell . to_do() ; // execute the appropriate action
+        current_state = state_cell.next_state ; // transition to the new state
+		switch(current_state){
+			case CHARGE_M:
+				int result = inc_Con(voltPtr, currentPtr);
+				break;
+			case CHARGE_T:
+				charge_t();
+				break;
+			case CHARGE_F:
+				charge_f();
+				break;
+			default:
+				break;
+		}
+	}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
   /* USER CODE END 3 */
 }
 
@@ -124,6 +215,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Configure the main internal regulator output voltage
   */
@@ -153,6 +245,12 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1;
+  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
   }
@@ -186,11 +284,11 @@ static void MX_ADC_Init(void)
   hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc.Init.ContinuousConvMode = DISABLE;
-  hadc.Init.DiscontinuousConvMode = DISABLE;
-  hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc.Init.DMAContinuousRequests = DISABLE;
-  hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc.Init.DiscontinuousConvMode = ENABLE;
+  hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T6_TRGO;
+  hadc.Init.DMAContinuousRequests = ENABLE;
+  hadc.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc.Init.LowPowerAutoWait = DISABLE;
   hadc.Init.LowPowerFrequencyMode = DISABLE;
@@ -233,7 +331,7 @@ static void MX_ADC_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC_Init 2 */
-
+	HAL_ADC_Start_DMA(&hadc, aResultDMA, 4);
   /* USER CODE END ADC_Init 2 */
 
 }
@@ -272,7 +370,49 @@ static void MX_SPI1_Init(void)
   }
   /* USER CODE BEGIN SPI1_Init 2 */
 
+
   /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 0;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 65535;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+	if (HAL_TIM_Base_Start(&htim6) != HAL_OK) {
+		/* Starting Error */
+		Error_Handler();
+	}
+  /* USER CODE END TIM6_Init 2 */
 
 }
 
@@ -321,7 +461,7 @@ static void MX_TIM21_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 160;
+  sConfigOC.Pulse = 320;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim21, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -329,12 +469,6 @@ static void MX_TIM21_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN TIM21_Init 2 */
-  if(HAL_TIM_PWM_Start(&htim21, TIM_CHANNEL_1) != HAL_OK)
-  {
-    /* Starting Error */
-	Error_Handler();
-  }
-
   /* USER CODE END TIM21_Init 2 */
   HAL_TIM_MspPostInit(&htim21);
 
@@ -384,6 +518,61 @@ static void MX_TSC_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel2_3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -429,7 +618,232 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+// function definitions funcdef
+/* increments the duty cycle of the PWM in direction "dir" by value "size"
+ * @ param dir = 1 for up, 0 for down
+ * @ param size is increment value
+ * @ returns 0 for success, 1 if limit is hit */
+static int PWM_DC_Step(int dir, int size) {
+	int status = 0;
+	int pulse = TIM21->CCR1;
+	if (dir) {
+		pulse += size;
+	} else {
+		pulse -= size;
+	}
+	if (pulse >= pulse_max) {
+		pulse = pulse_max;
+		status = 1;
+	}
+	if (pulse <= pulse_min) {
+		pulse = pulse_min;
+		status = 1;
+	}
+	TIM21->CCR1 = pulse;
+	return status;
+}
+/* MPPT Algorithm
+ * @Takes a pointer to the voltage and current from the output
+ * @of the solar panel and performs the incremental conductance algorithm.
+ * @Modifies the PWM output based on dV and dI.  */
+static int inc_Con(uint32_t  *voltage, uint32_t  *current) {
+	char exit = 0;
+	char status = 0;
+	char state = 0;
+	int dV = 0;
+	int dI = 0;
+	float dIdV = 0;
+	float IV = 0;
+	uint32_t  oldVolt = *voltage;
+	uint32_t  oldCurrent = *current;
+	HAL_Delay(1000);
+	*voltage = aResultDMA[0];
+	*current = aResultDMA[1];
+	dV = *voltage - oldVolt;
+	dI = *current - oldCurrent;
+	dIdV = dI/dV;
+	IV = -*current / *voltage;
+	while (exit == 0){
+		switch (state) {
+			case 0:
+				if (dV == 0) {
+					state = 1;
+					break;
+				} else {
+					state = 2;
+					break;
+				}
+			case 1:
+				if (dI == 0) {
+					state = 0;
+					status = 0;
+					exit = 1;
+					break;
+				} else {
+					state = 3;
+					break;
+				}
+			case 2:
+				if (dIdV == IV) {
+					state = 0;
+					status = 0;
+					exit = 1;
+					break;
+				} else {
+					state = 4;
+					break;
+				}
+			case 3:
+				if (dI > 0) {
+					status = PWM_DC_Step(0, 1);
+					state = 0;
+					exit = 1;
+					break;
+				} else {
+					status = PWM_DC_Step(1, 1);
+					state = 0;
+					exit = 1;
+					break;
+				}
+			case 4:
+				if (dIdV > IV) {
+					status = PWM_DC_Step(1, 1);
+					state = 0;
+					exit = 1;
+					break;
+				} else {
+					status = PWM_DC_Step(0, 1);
+					state = 0;
+					exit = 1;
+					break;
+				}
+			default:
+				status = 1;
+				exit = 1;
+				break;
+		}
+	}
+	return (status);
+}
+/*    [0] VBAT_LOW    [1] VBAT_OK   [2] VBAT_HIGH  [3] VSOL_LOW     [4] VSOL_OK    [5] IBAT_LOW     <--EVENTS | STATES */
+static Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE
+	update_inputs();
+	Event return_event = NOTHING;
+	switch(current_s) {
+		case START:
+			if(v_bat >= VBAT_OK_VOLTAGE){
+				return_event=  VBAT_OK;
+			}
+			else if(v_sol >= VSOL_OK_VOLTAGE){
+				return_event = VSOL_OK;
+			}
+			break;
+		case IDLE:
+			if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
+			}
+			else if(v_sol >= VSOL_OK_VOLTAGE){
+				return_event = VSOL_OK;
+			}
+			break;
+		case CHARGE_M:
+			if(v_bat >= VBAT_HIGH_VOLTAGE){
+				return_event = VBAT_HIGH;
+			}
+			else if(v_sol < VSOL_OK_VOLTAGE){
+				return_event = VSOL_LOW;
+			}
+			else if(v_bat >= VBAT_OK_VOLTAGE){
+				return_event = VBAT_OK;
+			}
+			break;
+		case CHARGE_T:
+			if(i_bat < IBAT_LOW_CURRENT){
+				return_event = IBAT_LOW;
+			}
+			else if(v_sol < VSOL_OK_VOLTAGE){
+				return_event = VSOL_LOW;
+			}
+			break;
+		case CHARGE_F:
+			if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
+			}
+			else if(v_sol < VSOL_OK_VOLTAGE){
+				return_event = VSOL_LOW;
+			}
+			break;
+		default:
+			return_event = NOTHING; // maybe add a fault state
+			break;
+	}
+	return return_event;
+}
+void pwm_on( void ){
+    // Turn on PWM
+	if (HAL_TIM_PWM_Start(&htim21, TIM_CHANNEL_1) != HAL_OK) {
+		/* Starting Error */
+		Error_Handler();
+	}
+}
+void pwm_off( void ){
+    // Turn on PWM
+	if (HAL_TIM_PWM_Stop(&htim21, TIM_CHANNEL_1) != HAL_OK) {
+		/* Starting Error */
+		Error_Handler();
+	}
+}
+void load_on ( void ){
+    // Turn load on GPIO PIN
+	HAL_GPIO_WritePin(GPIOB, GPIO_LOAD_CTL_Pin, GPIO_PIN_SET);
+}
+void load_off ( void ){
+    // Turn load off GPIO PIN
+	HAL_GPIO_WritePin(GPIOB, GPIO_LOAD_CTL_Pin, GPIO_PIN_RESET);
+}
+void do_nothing( void ){
+    printf("do_nothing\n");
+}
+void charge_t ( void ){
+	float error;
+	float step;
+	char status;
+	update_inputs();
+	error = VOLTAGE_TOPPING - v_bat;
+	step = abs(round(error));
+	if(error > 0){
+		status = PWM_DC_Step(1, step);
+	}
+	else if (error < 0){
+		status = PWM_DC_Step(0, step);
+	}
+}
+void charge_f ( void ){
+	float error;
+	float step;
+	char status;
+	update_inputs();
+	error = VOLTAGE_FLOAT - v_bat;
+	step = abs(round(error));
+	if(error > 0){
+		status = PWM_DC_Step(1, step);
+	}
+	else if (error < 0){
+		status = PWM_DC_Step(0, step);
+	}
+}
+void update_inputs( void ){
+    // update inputs from ADC values
+	v_sol = (aResultDMA[0]*VSOL_MAX)/ADC_MAX;
+	i_sol = (aResultDMA[1]*VDDA)/ADC_MAX;
+	v_bat = (aResultDMA[2]*VBAT_MAX)/ADC_MAX;
+	i_bat = (aResultDMA[3]*VDDA)/ADC_MAX;
+}
 
+void USARTx_IRQHandler(void)
+{
+HAL_UART_IRQHandler(&huart1);
+}
 /* USER CODE END 4 */
 
 /**
@@ -439,11 +853,10 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1) {
+	}
   /* USER CODE END Error_Handler_Debug */
 }
 
