@@ -71,8 +71,15 @@ TIM_HandleTypeDef htim21;
 
 TSC_HandleTypeDef htsc;
 
+UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_tx;
+
 /* USER CODE BEGIN PV */
+char aTxBuffer[100];
+uint8_t aHeaderBuffer[] = "Event,State,Duty_Cycle,Voltage_Solar,Current_Solar,Voltage_Batter,Current_Battery\n";
 uint32_t aResultDMA[4];
+uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
+uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
 float v_sol, v_bat, i_sol, i_bat;
 /* USER CODE END PV */
 
@@ -85,6 +92,7 @@ static void MX_TSC_Init(void);
 static void MX_ADC_Init(void);
 static void MX_TIM21_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static int PWM_DC_Step(int dir, int size);
 static int inc_Con(uint32_t  *voltage, uint32_t  *current);
@@ -109,6 +117,8 @@ Table_Cell state_table [ MAX_STATE ][ MAX_EVENT ] = {
 	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_T } } ,// CHARGE_T
 	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } , { do_nothing , CHARGE_F } } // CHARGE_F
 	};
+const char* event_names[] = { "VBAT_LOW", "VBAT_OK", "VBAT_HIGH", "VSOL_LOW", "VSOL_OK", "IBAT_LOW", "NOTHING"};
+const char* state_names[] = { "START", "IDLE" , "CHARGE_M", "CHARGE_T", "CHARGE_F", "MAX_STATE" };
 /*
 /* USER CODE END 0 */
 
@@ -125,12 +135,18 @@ int main(void)
     Event current_event ;
     State current_state ;
     current_state = START ; // initial state
+	uint32_t *voltPtr = &aResultDMA[0];
+	uint32_t *currentPtr = &aResultDMA[1];
+
+
+	int numWritten;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
+
   /* USER CODE BEGIN Init */
   /* USER CODE END Init */
 
@@ -148,19 +164,26 @@ int main(void)
   MX_ADC_Init();
   MX_TIM21_Init();
   MX_TIM6_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-	//int voltage = rand() % (10 + 1 - 1) + 1;  //Rand is used to simulate ADC reads. Replace with actual reads for production code.
-	//int current = rand() % (10 + 1 - 1) + 1;
-	uint32_t *voltPtr = &aResultDMA[0];
-	uint32_t *currentPtr = &aResultDMA[1];
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1) {
-		HAL_Delay(10);
-		current_event = update_events(current_state);
 
+	  if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aHeaderBuffer, HEADERBUFFERSIZE)!= HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+	while (1) {
+		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, aResultDMA[0], aResultDMA[1], aResultDMA[2], aResultDMA[3]);
+		if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, TXBUFFERSIZE)!= HAL_OK)
+		  {
+		    Error_Handler();
+		  }
+		HAL_Delay(1000);
+		current_event = update_events(current_state);
         state_cell = state_table [ current_state ][ current_event ];
         state_cell . to_do() ; // execute the appropriate action
         current_state = state_cell.next_state ; // transition to the new state
@@ -192,6 +215,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Configure the main internal regulator output voltage
   */
@@ -221,6 +245,12 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1;
+  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
   }
@@ -451,6 +481,7 @@ static void MX_TIM21_Init(void)
   */
 static void MX_TSC_Init(void)
 {
+
   /* USER CODE BEGIN TSC_Init 0 */
 
   /* USER CODE END TSC_Init 0 */
@@ -483,6 +514,43 @@ static void MX_TSC_Init(void)
   /* USER CODE BEGIN TSC_Init 2 */
 
   /* USER CODE END TSC_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+
+  /* USER CODE END USART1_Init 2 */
+
 }
 
 /**
@@ -498,6 +566,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel2_3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
 
 }
 
@@ -767,6 +838,11 @@ void update_inputs( void ){
 	i_sol = (aResultDMA[1]*VDDA)/ADC_MAX;
 	v_bat = (aResultDMA[2]*VBAT_MAX)/ADC_MAX;
 	i_bat = (aResultDMA[3]*VDDA)/ADC_MAX;
+}
+
+void USARTx_IRQHandler(void)
+{
+HAL_UART_IRQHandler(&huart1);
 }
 /* USER CODE END 4 */
 
