@@ -67,8 +67,6 @@ void Error_Handler(void);
 #define MCO_GPIO_Port GPIOH
 #define V_SOLAR_Pin GPIO_PIN_0
 #define V_SOLAR_GPIO_Port GPIOA
-#define I_SOLAR_Pin GPIO_PIN_1
-#define I_SOLAR_GPIO_Port GPIOA
 #define V_BATTERY_Pin GPIO_PIN_4
 #define V_BATTERY_GPIO_Port GPIOA
 #define I_BATTERY_Pin GPIO_PIN_5

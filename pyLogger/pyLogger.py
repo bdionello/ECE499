@@ -17,6 +17,6 @@ with open('Logger.csv', 'a') as the_file:
         try:
             print(serialString)
            # print(serialString.decode("Ascii"))
-            the_file.write(serialString)
+            #the_file.write(serialString)
         except:
             pass
