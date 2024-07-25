@@ -94,7 +94,7 @@ static void MX_TIM6_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static int PWM_DC_Step(int dir, int size);
-static int inc_Con(uint32_t  *voltage, uint32_t  *current);
+static int inc_Con(void);
 static void do_nothing( void );
 static void pwm_on( void );
 static void pwm_off( void );
@@ -175,19 +175,19 @@ int main(void)
 //	  }
 //	  HAL_Delay(1000);
 	while (1) {
-		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, aResultDMA[0], aResultDMA[1], aResultDMA[2], aResultDMA[3], aResultDMA[4]);
+		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, v_sol, i_sol, v_bat, i_bat, i_load);
 		if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, TXBUFFERSIZE)!= HAL_OK)
 		  {
 		    Error_Handler();
 		  }
-		HAL_Delay(1000);
+		//HAL_Delay(1000);
 		current_event = update_events(current_state);
         state_cell = state_table [ current_state ][ current_event ];
         state_cell.to_do() ; // execute the appropriate action
         current_state = state_cell.next_state ; // transition to the new state
 		switch(current_state){
 			case CHARGE_M:
-				int result = inc_Con(voltPtr, currentPtr);
+				int result = inc_Con();
 				break;
 			case CHARGE_T:
 				charge_t();
@@ -610,7 +610,7 @@ static int PWM_DC_Step(int dir, int size) {
  * @Takes a pointer to the voltage and current from the output
  * @of the solar panel and performs the incremental conductance algorithm.
  * @Modifies the PWM output based on dV and dI.  */
-static int inc_Con(uint32_t  *voltage, uint32_t  *current) {
+static int inc_Con(void) {
 	char exit = 0;
 	char status = 0;
 	char state = 0;
@@ -618,15 +618,17 @@ static int inc_Con(uint32_t  *voltage, uint32_t  *current) {
 	int dI = 0;
 	float dIdV = 0;
 	float IV = 0;
-	uint32_t  oldVolt = *voltage;
-	uint32_t  oldCurrent = *current;
-	HAL_Delay(1000);
-	*voltage = aResultDMA[0];
-	*current = aResultDMA[1];
-	dV = *voltage - oldVolt;
-	dI = *current - oldCurrent;
+	update_inputs();
+	uint16_t  oldVolt = v_sol;
+	uint16_t  oldCurrent = i_sol;
+	//HAL_Delay(1000);
+	update_inputs();
+	uint16_t voltage = v_sol;
+	uint16_t current = i_sol;
+	dV = voltage - oldVolt;
+	dI = current - oldCurrent;
 	dIdV = dI/dV;
-	IV = -*current / *voltage;
+	IV = -current / voltage;
 	while (exit == 0){
 		switch (state) {
 			case 0:
@@ -798,14 +800,14 @@ void charge_f ( void ){
 }
 void update_inputs( void ){
 	uint8_t sample_factor = 8;
-	uint8_t NSAMPLES = 2^sample_factor;
+	uint16_t NSAMPLES = 1<<sample_factor;
 	uint32_t sum0 = 0;
 	uint32_t sum1 = 0;
 	uint32_t sum2 = 0;
 	uint32_t sum3 = 0;
 	uint32_t sum4 = 0;
 	HAL_ADC_Start_DMA(&hadc, aResultDMA, 5);
-	for(uint8_t i = 0; i < NSAMPLES; i++){
+	for(uint16_t i = 0; i < NSAMPLES; i++){
 		adc_conv_complt_flag = 1;
 		while(adc_conv_complt_flag){}; // wait for ADC conversion to complete
 		sum0 += aResultDMA[0];
