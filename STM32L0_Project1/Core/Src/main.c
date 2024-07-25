@@ -278,7 +278,7 @@ static void MX_ADC_Init(void)
   hadc.Init.OversamplingMode = DISABLE;
   hadc.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
   hadc.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc.Init.SamplingTime = ADC_SAMPLETIME_3CYCLES_5;
+  hadc.Init.SamplingTime = ADC_SAMPLETIME_160CYCLES_5;
   hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc.Init.ContinuousConvMode = DISABLE;
@@ -286,7 +286,7 @@ static void MX_ADC_Init(void)
   hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
   hadc.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T6_TRGO;
   hadc.Init.DMAContinuousRequests = ENABLE;
-  hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc.Init.LowPowerAutoWait = DISABLE;
   hadc.Init.LowPowerFrequencyMode = ENABLE;
@@ -337,7 +337,7 @@ static void MX_ADC_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC_Init 2 */
-    //HAL_ADCEx_Calibration_Start(&hadc, ADC_SINGLE_ENDED);
+  HAL_ADCEx_Calibration_Start(&hadc, ADC_SINGLE_ENDED);
 
   /* USER CODE END ADC_Init 2 */
 
@@ -402,7 +402,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 65535;
+  htim6.Init.Period = 8192;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -621,7 +621,7 @@ static int inc_Con(void) {
 	update_inputs();
 	uint16_t  oldVolt = v_sol;
 	uint16_t  oldCurrent = i_sol;
-	//HAL_Delay(1000);
+	HAL_Delay(1000);
 	update_inputs();
 	uint16_t voltage = v_sol;
 	uint16_t current = i_sol;
@@ -722,6 +722,9 @@ static Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE
 			else if(v_bat >= VBAT_OK_VOLTAGE){
 				return_event = VBAT_OK;
 			}
+			else if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
+			}
 			break;
 		case CHARGE_T:
 			if(i_bat < IBAT_LOW_CURRENT){
@@ -729,6 +732,9 @@ static Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE
 			}
 			else if(v_sol < VSOL_OK_VOLTAGE){
 				return_event = VSOL_LOW;
+			}
+			else if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
 			}
 			break;
 		case CHARGE_F:
