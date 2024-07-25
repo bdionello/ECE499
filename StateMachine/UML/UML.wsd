@@ -16,6 +16,7 @@ state CHARGE {
     TOPPING --> FLOAT : IBAT_LOW
 }
 MPPT --> MPPT : VBAT_OK/\nload_on()
+CHARGE --> CHARGE : VBAT_LOW/\nload_off()
 CHARGE --> IDLE : VSOL_LOW/\npwm_off()
 FLOAT --> MPPT : VBAT_LOW/\nload_off()
 @enduml

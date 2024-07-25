@@ -106,8 +106,10 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     PA1     ------> ADC_IN1
     PA4     ------> ADC_IN4
     PA5     ------> ADC_IN5
+    PA6     ------> ADC_IN6
     */
-    GPIO_InitStruct.Pin = V_SOLAR_Pin|I_SOLAR_Pin|V_BATTERY_Pin|I_BATTERY_Pin;
+    GPIO_InitStruct.Pin = V_SOLAR_Pin|GPIO_PIN_1|V_BATTERY_Pin|I_BATTERY_Pin
+                          |GPIO_PIN_6;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -159,8 +161,10 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc)
     PA1     ------> ADC_IN1
     PA4     ------> ADC_IN4
     PA5     ------> ADC_IN5
+    PA6     ------> ADC_IN6
     */
-    HAL_GPIO_DeInit(GPIOA, V_SOLAR_Pin|I_SOLAR_Pin|V_BATTERY_Pin|I_BATTERY_Pin);
+    HAL_GPIO_DeInit(GPIOA, V_SOLAR_Pin|GPIO_PIN_1|V_BATTERY_Pin|I_BATTERY_Pin
+                          |GPIO_PIN_6);
 
     /* ADC1 DMA DeInit */
     HAL_DMA_DeInit(hadc->DMA_Handle);
@@ -337,104 +341,6 @@ void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* htim_base)
   /* USER CODE BEGIN TIM21_MspDeInit 1 */
 
   /* USER CODE END TIM21_MspDeInit 1 */
-  }
-
-}
-
-/**
-* @brief TSC MSP Initialization
-* This function configures the hardware resources used in this example
-* @param htsc: TSC handle pointer
-* @retval None
-*/
-void HAL_TSC_MspInit(TSC_HandleTypeDef* htsc)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  if(htsc->Instance==TSC)
-  {
-  /* USER CODE BEGIN TSC_MspInit 0 */
-
-  /* USER CODE END TSC_MspInit 0 */
-    /* Peripheral clock enable */
-    __HAL_RCC_TSC_CLK_ENABLE();
-
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    /**TSC GPIO Configuration
-    PA2     ------> TSC_G1_IO3
-    PA3     ------> TSC_G1_IO4
-    PA6     ------> TSC_G2_IO3
-    PA7     ------> TSC_G2_IO4
-    PB0     ------> TSC_G3_IO2
-    PB1     ------> TSC_G3_IO3
-    */
-    GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_6;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF3_TSC;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_7;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF3_TSC;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_0;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF3_TSC;
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_1;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF3_TSC;
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /* USER CODE BEGIN TSC_MspInit 1 */
-
-  /* USER CODE END TSC_MspInit 1 */
-
-  }
-
-}
-
-/**
-* @brief TSC MSP De-Initialization
-* This function freeze the hardware resources used in this example
-* @param htsc: TSC handle pointer
-* @retval None
-*/
-void HAL_TSC_MspDeInit(TSC_HandleTypeDef* htsc)
-{
-  if(htsc->Instance==TSC)
-  {
-  /* USER CODE BEGIN TSC_MspDeInit 0 */
-
-  /* USER CODE END TSC_MspDeInit 0 */
-    /* Peripheral clock disable */
-    __HAL_RCC_TSC_CLK_DISABLE();
-
-    /**TSC GPIO Configuration
-    PA2     ------> TSC_G1_IO3
-    PA3     ------> TSC_G1_IO4
-    PA6     ------> TSC_G2_IO3
-    PA7     ------> TSC_G2_IO4
-    PB0     ------> TSC_G3_IO2
-    PB1     ------> TSC_G3_IO3
-    */
-    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_6|GPIO_PIN_7);
-
-    HAL_GPIO_DeInit(GPIOB, GPIO_PIN_0|GPIO_PIN_1);
-
-  /* USER CODE BEGIN TSC_MspDeInit 1 */
-
-  /* USER CODE END TSC_MspDeInit 1 */
   }
 
 }

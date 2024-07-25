@@ -42,16 +42,17 @@ typedef struct {
 #define pulse_max 630 // 640 is counter period
 #define pulse_min 10
 #define ADC_MAX 4095
-#define VSOL_MAX 25.0
+#define VSOL_MAX 20.7
 #define VBAT_MAX 15.0
 #define VDDA 3.3
-#define VBAT_OK_VOLTAGE 12.5
-#define VBAT_LOW_VOLTAGE 11.75
-#define VSOL_OK_VOLTAGE 5.0
-#define VBAT_HIGH_VOLTAGE 14.7
-#define IBAT_LOW_CURRENT 0.200
-#define VOLTAGE_TOPPING 14.2
-#define VOLTAGE_FLOAT 13.5
+
+#define VSOL_OK_VOLTAGE 1986
+#define VBAT_OK_VOLTAGE 3447
+#define VBAT_LOW_VOLTAGE 3240
+#define VBAT_HIGH_VOLTAGE 4054
+#define VOLTAGE_TOPPING 3916
+#define VOLTAGE_FLOAT 3723
+#define IBAT_LOW_CURRENT 81
 
 /* USER CODE END PD */
 
@@ -69,18 +70,17 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim21;
 
-TSC_HandleTypeDef htsc;
-
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_tx;
 
 /* USER CODE BEGIN PV */
 char aTxBuffer[100];
 uint8_t aHeaderBuffer[] = "Event,State,Duty_Cycle,Voltage_Solar,Current_Solar,Voltage_Batter,Current_Battery\n";
-uint32_t aResultDMA[4];
+uint8_t adc_conv_complt_flag;
+uint32_t aResultDMA[5];
 uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
 uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
-float v_sol, v_bat, i_sol, i_bat;
+uint16_t v_sol, v_bat, i_sol, i_bat, i_load;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -88,14 +88,13 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
-static void MX_TSC_Init(void);
 static void MX_ADC_Init(void);
 static void MX_TIM21_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static int PWM_DC_Step(int dir, int size);
-static int inc_Con(uint32_t  *voltage, uint32_t  *current);
+static int inc_Con(void);
 static void do_nothing( void );
 static void pwm_on( void );
 static void pwm_off( void );
@@ -138,7 +137,6 @@ int main(void)
 	uint32_t *voltPtr = &aResultDMA[0];
 	uint32_t *currentPtr = &aResultDMA[1];
 
-
 	int numWritten;
   /* USER CODE END 1 */
 
@@ -160,7 +158,6 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_SPI1_Init();
-  MX_TSC_Init();
   MX_ADC_Init();
   MX_TIM21_Init();
   MX_TIM6_Init();
@@ -172,24 +169,25 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-	  if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aHeaderBuffer, HEADERBUFFERSIZE)!= HAL_OK)
-	  {
-	    Error_Handler();
-	  }
+//	  if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aHeaderBuffer, HEADERBUFFERSIZE)!= HAL_OK)
+//	  {
+//	    Error_Handler();
+//	  }
+//	  HAL_Delay(1000);
 	while (1) {
-		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, aResultDMA[0], aResultDMA[1], aResultDMA[2], aResultDMA[3]);
+		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, v_sol, i_sol, v_bat, i_bat, i_load);
 		if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, TXBUFFERSIZE)!= HAL_OK)
 		  {
 		    Error_Handler();
 		  }
-		HAL_Delay(1000);
+		//HAL_Delay(1000);
 		current_event = update_events(current_state);
         state_cell = state_table [ current_state ][ current_event ];
-        state_cell . to_do() ; // execute the appropriate action
+        state_cell.to_do() ; // execute the appropriate action
         current_state = state_cell.next_state ; // transition to the new state
 		switch(current_state){
 			case CHARGE_M:
-				int result = inc_Con(voltPtr, currentPtr);
+				int result = inc_Con();
 				break;
 			case CHARGE_T:
 				charge_t();
@@ -280,7 +278,7 @@ static void MX_ADC_Init(void)
   hadc.Init.OversamplingMode = DISABLE;
   hadc.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
   hadc.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc.Init.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  hadc.Init.SamplingTime = ADC_SAMPLETIME_160CYCLES_5;
   hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc.Init.ContinuousConvMode = DISABLE;
@@ -291,7 +289,7 @@ static void MX_ADC_Init(void)
   hadc.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc.Init.LowPowerAutoWait = DISABLE;
-  hadc.Init.LowPowerFrequencyMode = DISABLE;
+  hadc.Init.LowPowerFrequencyMode = ENABLE;
   hadc.Init.LowPowerAutoPowerOff = DISABLE;
   if (HAL_ADC_Init(&hadc) != HAL_OK)
   {
@@ -330,8 +328,17 @@ static void MX_ADC_Init(void)
   {
     Error_Handler();
   }
+
+  /** Configure for the selected ADC regular channel to be converted.
+  */
+  sConfig.Channel = ADC_CHANNEL_6;
+  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE BEGIN ADC_Init 2 */
-	HAL_ADC_Start_DMA(&hadc, aResultDMA, 4);
+  HAL_ADCEx_Calibration_Start(&hadc, ADC_SINGLE_ENDED);
+
   /* USER CODE END ADC_Init 2 */
 
 }
@@ -395,7 +402,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 65535;
+  htim6.Init.Period = 8192;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -471,49 +478,6 @@ static void MX_TIM21_Init(void)
   /* USER CODE BEGIN TIM21_Init 2 */
   /* USER CODE END TIM21_Init 2 */
   HAL_TIM_MspPostInit(&htim21);
-
-}
-
-/**
-  * @brief TSC Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TSC_Init(void)
-{
-
-  /* USER CODE BEGIN TSC_Init 0 */
-
-  /* USER CODE END TSC_Init 0 */
-
-  /* USER CODE BEGIN TSC_Init 1 */
-
-  /* USER CODE END TSC_Init 1 */
-
-  /** Configure the TSC peripheral
-  */
-  htsc.Instance = TSC;
-  htsc.Init.CTPulseHighLength = TSC_CTPH_2CYCLES;
-  htsc.Init.CTPulseLowLength = TSC_CTPL_2CYCLES;
-  htsc.Init.SpreadSpectrum = DISABLE;
-  htsc.Init.SpreadSpectrumDeviation = 1;
-  htsc.Init.SpreadSpectrumPrescaler = TSC_SS_PRESC_DIV1;
-  htsc.Init.PulseGeneratorPrescaler = TSC_PG_PRESC_DIV4;
-  htsc.Init.MaxCountValue = TSC_MCV_8191;
-  htsc.Init.IODefaultMode = TSC_IODEF_OUT_PP_LOW;
-  htsc.Init.SynchroPinPolarity = TSC_SYNC_POLARITY_FALLING;
-  htsc.Init.AcquisitionMode = TSC_ACQ_MODE_NORMAL;
-  htsc.Init.MaxCountInterrupt = DISABLE;
-  htsc.Init.ChannelIOs = TSC_GROUP1_IO3|TSC_GROUP2_IO3|TSC_GROUP3_IO2;
-  htsc.Init.ShieldIOs = 0;
-  htsc.Init.SamplingIOs = TSC_GROUP1_IO4|TSC_GROUP2_IO4|TSC_GROUP3_IO3;
-  if (HAL_TSC_Init(&htsc) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TSC_Init 2 */
-
-  /* USER CODE END TSC_Init 2 */
 
 }
 
@@ -646,7 +610,7 @@ static int PWM_DC_Step(int dir, int size) {
  * @Takes a pointer to the voltage and current from the output
  * @of the solar panel and performs the incremental conductance algorithm.
  * @Modifies the PWM output based on dV and dI.  */
-static int inc_Con(uint32_t  *voltage, uint32_t  *current) {
+static int inc_Con(void) {
 	char exit = 0;
 	char status = 0;
 	char state = 0;
@@ -654,15 +618,17 @@ static int inc_Con(uint32_t  *voltage, uint32_t  *current) {
 	int dI = 0;
 	float dIdV = 0;
 	float IV = 0;
-	uint32_t  oldVolt = *voltage;
-	uint32_t  oldCurrent = *current;
+	update_inputs();
+	uint16_t  oldVolt = v_sol;
+	uint16_t  oldCurrent = i_sol;
 	HAL_Delay(1000);
-	*voltage = aResultDMA[0];
-	*current = aResultDMA[1];
-	dV = *voltage - oldVolt;
-	dI = *current - oldCurrent;
+	update_inputs();
+	uint16_t voltage = v_sol;
+	uint16_t current = i_sol;
+	dV = voltage - oldVolt;
+	dI = current - oldCurrent;
 	dIdV = dI/dV;
-	IV = -*current / *voltage;
+	IV = -current / voltage;
 	while (exit == 0){
 		switch (state) {
 			case 0:
@@ -756,6 +722,9 @@ static Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE
 			else if(v_bat >= VBAT_OK_VOLTAGE){
 				return_event = VBAT_OK;
 			}
+			else if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
+			}
 			break;
 		case CHARGE_T:
 			if(i_bat < IBAT_LOW_CURRENT){
@@ -763,6 +732,9 @@ static Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE
 			}
 			else if(v_sol < VSOL_OK_VOLTAGE){
 				return_event = VSOL_LOW;
+			}
+			else if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
 			}
 			break;
 		case CHARGE_F:
@@ -833,16 +805,40 @@ void charge_f ( void ){
 	}
 }
 void update_inputs( void ){
+	uint8_t sample_factor = 8;
+	uint16_t NSAMPLES = 1<<sample_factor;
+	uint32_t sum0 = 0;
+	uint32_t sum1 = 0;
+	uint32_t sum2 = 0;
+	uint32_t sum3 = 0;
+	uint32_t sum4 = 0;
+	HAL_ADC_Start_DMA(&hadc, aResultDMA, 5);
+	for(uint16_t i = 0; i < NSAMPLES; i++){
+		adc_conv_complt_flag = 1;
+		while(adc_conv_complt_flag){}; // wait for ADC conversion to complete
+		sum0 += aResultDMA[0];
+		sum1 += aResultDMA[1];
+		sum2 += aResultDMA[2];
+		sum3 += aResultDMA[3];
+		sum4 += aResultDMA[4];
+	}
+	HAL_ADC_Stop_DMA(&hadc);
     // update inputs from ADC values
-	v_sol = (aResultDMA[0]*VSOL_MAX)/ADC_MAX;
-	i_sol = (aResultDMA[1]*VDDA)/ADC_MAX;
-	v_bat = (aResultDMA[2]*VBAT_MAX)/ADC_MAX;
-	i_bat = (aResultDMA[3]*VDDA)/ADC_MAX;
+	v_sol = (sum0 >> sample_factor);
+	i_sol = (sum1 >> sample_factor);
+	v_bat = (sum2 >> sample_factor);
+	i_bat = (sum3 >> sample_factor);
+	i_load = (sum4 >> sample_factor);
 }
 
-void USARTx_IRQHandler(void)
-{
-HAL_UART_IRQHandler(&huart1);
+void USARTx_IRQHandler(void){
+	HAL_UART_IRQHandler(&huart1);
+	return;
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+	adc_conv_complt_flag = 0;
+	return;
 }
 /* USER CODE END 4 */
 
