@@ -1,0 +1,6 @@
+07-26-2024:
+- Added EPD drivers to driver folder.
+- main.c modified to include new screen display function. Function inserted into main loop after delay, change if needed.
+- Project ioc modified to change PA15 to GPIO_OUTPUT in order to get screen to work.
+- images.c created to hold c compatible images. Images were modified using paint and XnView Classic.
+
