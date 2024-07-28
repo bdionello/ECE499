@@ -46,10 +46,10 @@ typedef struct {
 #define VBAT_MAX 15.0
 #define VDDA 3.3
 
-#define VSOL_OK_VOLTAGE 1986
-#define VBAT_OK_VOLTAGE 3447
-#define VBAT_LOW_VOLTAGE 3240
-#define VBAT_HIGH_VOLTAGE 4054
+#define VSOL_OK_VOLTAGE 776
+#define VBAT_OK_VOLTAGE 3447//12.5
+#define VBAT_LOW_VOLTAGE 3240//11.75
+#define VBAT_HIGH_VOLTAGE 4054//14.7
 #define VOLTAGE_TOPPING 3916
 #define VOLTAGE_FLOAT 3723
 #define IBAT_LOW_CURRENT 81
@@ -783,6 +783,9 @@ void charge_t ( void ){
 	update_inputs();
 	error = VOLTAGE_TOPPING - v_bat;
 	step = abs(round(error));
+	if(step>64){
+		step = 64;
+	}
 	if(error > 0){
 		status = PWM_DC_Step(1, step);
 	}
@@ -797,6 +800,9 @@ void charge_f ( void ){
 	update_inputs();
 	error = VOLTAGE_FLOAT - v_bat;
 	step = abs(round(error));
+	if(step>64){
+		step = 64;
+	}
 	if(error > 0){
 		status = PWM_DC_Step(1, step);
 	}
