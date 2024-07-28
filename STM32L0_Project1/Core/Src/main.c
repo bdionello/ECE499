@@ -24,6 +24,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "stm32l0538_discovery_epd.h"
+#include "stm32l0538_discovery.h"
+#include "images.c"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,6 +57,12 @@ typedef struct {
 #define VOLTAGE_FLOAT 3723
 #define IBAT_LOW_CURRENT 81
 
+#define VSOL_SCALE 6.446414182
+#define VBAT_SCALE 3.626107977
+#define ISOL_SCALE 2.014504432
+#define IBAT_SCALE 4.029008864
+#define ILOAD_SCALE 8.058017728
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -81,6 +90,7 @@ uint32_t aResultDMA[5];
 uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
 uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
 uint16_t v_sol, v_bat, i_sol, i_bat, i_load;
+uint8_t loadState = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -104,6 +114,7 @@ static void update_inputs( void );
 static Event update_events( State current_s );
 static void load_on ( void );
 static void load_off ( void );
+static void refreshDisplay(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -134,8 +145,6 @@ int main(void)
     Event current_event ;
     State current_state ;
     current_state = START ; // initial state
-	uint32_t *voltPtr = &aResultDMA[0];
-	uint32_t *currentPtr = &aResultDMA[1];
 
 	int numWritten;
   /* USER CODE END 1 */
@@ -163,7 +172,8 @@ int main(void)
   MX_TIM6_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  BSP_EPD_Init();
+  refreshDisplay();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -181,6 +191,7 @@ int main(void)
 		    Error_Handler();
 		  }
 		//HAL_Delay(1000);
+
 		current_event = update_events(current_state);
         state_cell = state_table [ current_state ][ current_event ];
         state_cell.to_do() ; // execute the appropriate action
@@ -198,6 +209,7 @@ int main(void)
 			default:
 				break;
 		}
+		refreshDisplay();
 	}
     /* USER CODE END WHILE */
 
@@ -365,7 +377,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_HARD_INPUT;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
   hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
@@ -556,6 +568,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, ePD1_RESET_Pin|ePD1_PWR_ENn_Pin|ePD1_D_C_Pin|GPIO_LOAD_CTL_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(ePD1_CS_GPIO_Port, ePD1_CS_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pins : ePD1_RESET_Pin ePD1_PWR_ENn_Pin ePD1_D_C_Pin GPIO_LOAD_CTL_Pin */
   GPIO_InitStruct.Pin = ePD1_RESET_Pin|ePD1_PWR_ENn_Pin|ePD1_D_C_Pin|GPIO_LOAD_CTL_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -568,6 +583,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(ePD1_BUSY_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : ePD1_CS_Pin */
+  GPIO_InitStruct.Pin = ePD1_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(ePD1_CS_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : MFX_I2C_SCL_Pin MFX_I2C_SDA_Pin */
   GPIO_InitStruct.Pin = MFX_I2C_SCL_Pin|MFX_I2C_SDA_Pin;
@@ -691,6 +713,68 @@ static int inc_Con(void) {
 	}
 	return (status);
 }
+
+/* Refreshes screen
+ * @Uses a temp char array to hold value of current and voltage scaled to milli.
+ * @Displays a sun or moon depending on if solar voltage is higher or lower than battery voltage
+ * @Refreshes that bad boy  */
+void refreshDisplay(void) {
+	//v_sol = (rand() % (4095 - 0 + 1)) + 0;
+	int tempVal = v_sol * VSOL_SCALE;
+	char tempStr[6]; //Should be good up to 99999 mA/mV
+	sprintf(tempStr, "%i", tempVal);
+	BSP_EPD_Clear(EPD_COLOR_WHITE);
+	BSP_EPD_SetFont(&Font12);
+	BSP_EPD_DisplayStringAt(1, 0, "Panel Voltage is: ", LEFT_MODE);
+	BSP_EPD_DisplayStringAt(130, 0, tempStr, LEFT_MODE);
+	BSP_EPD_DisplayStringAt(170, 0, "mV", LEFT_MODE);
+	//test = 1337; //test variable, replace with I_sol and scale to mA
+	//i_sol = (rand() % (4095 - 0 + 1)) + 0;
+	tempVal = i_sol * ISOL_SCALE;
+	sprintf(tempStr, "%i", tempVal);
+	BSP_EPD_DisplayStringAt(1, 3, "Panel Current is: ", LEFT_MODE);
+	BSP_EPD_DisplayStringAt(130, 3, tempStr, LEFT_MODE);
+	BSP_EPD_DisplayStringAt(170, 3, "mA", LEFT_MODE);
+	//test = 12312; //test variable, replace with v_bat and scale to mV
+	//v_bat = (rand() % (4095 - 0 + 1)) + 0;
+	tempVal = v_bat * VBAT_SCALE;
+	sprintf(tempStr, "%i", tempVal);
+	BSP_EPD_DisplayStringAt(1, 6, "Battery Voltage is: ", LEFT_MODE);
+	BSP_EPD_DisplayStringAt(140, 6, tempStr, LEFT_MODE);
+	BSP_EPD_DisplayStringAt(180, 6, "mV", LEFT_MODE);
+	//test = 1613; //test variable, replace with I_bat and scale to mA
+	//i_bat = (rand() % (4095 - 0 + 1)) + 0;
+	tempVal = i_bat * IBAT_SCALE;
+	sprintf(tempStr, "%i", tempVal);
+	BSP_EPD_DisplayStringAt(1, 9, "Battery Current is: ", LEFT_MODE);
+	BSP_EPD_DisplayStringAt(140, 9, tempStr, LEFT_MODE);
+	BSP_EPD_DisplayStringAt(180, 9, "mA", LEFT_MODE);
+	if (v_sol >= VSOL_OK_VOLTAGE) {
+		BSP_EPD_DisplayStringAt(1, 12, "Solar Present", LEFT_MODE);
+		BSP_EPD_DrawImage(200, 0, 30, 45, Sun);
+	} else {
+		BSP_EPD_DisplayStringAt(1, 12, "Solar Hidden", LEFT_MODE);
+		BSP_EPD_DrawImage(200, 0, 30, 45, Moon);
+	}
+	if (v_bat < VBAT_LOW_VOLTAGE) {
+		BSP_EPD_DisplayStringAt(95, 12, "|Batt Low", LEFT_MODE);
+		BSP_EPD_DrawImage(200, 6, 30, 45, batLow);
+	} else if (v_bat >= VBAT_OK_VOLTAGE && v_bat <= VBAT_HIGH_VOLTAGE) {
+		BSP_EPD_DisplayStringAt(95, 12, "|Batt Charge", LEFT_MODE);
+		BSP_EPD_DrawImage(200, 6, 30, 45, batCharge);
+	} else {
+		BSP_EPD_DisplayStringAt(95, 12, "|Batt Full", LEFT_MODE);
+		BSP_EPD_DrawImage(200, 6, 30, 45, batFull);
+	}
+	if (loadState == 0){
+		BSP_EPD_DisplayStringAt(185, 12, "|Load Off", LEFT_MODE);
+	}
+	else {
+		BSP_EPD_DisplayStringAt(185, 12, "|Load On", LEFT_MODE);
+	}
+	BSP_EPD_RefreshDisplay();
+}
+
 /*    [0] VBAT_LOW    [1] VBAT_OK   [2] VBAT_HIGH  [3] VSOL_LOW     [4] VSOL_OK    [5] IBAT_LOW     <--EVENTS | STATES */
 static Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE
 	update_inputs();
@@ -768,10 +852,12 @@ void pwm_off( void ){
 void load_on ( void ){
     // Turn load on GPIO PIN
 	HAL_GPIO_WritePin(GPIOB, GPIO_LOAD_CTL_Pin, GPIO_PIN_SET);
+	loadState = 1;
 }
 void load_off ( void ){
     // Turn load off GPIO PIN
 	HAL_GPIO_WritePin(GPIOB, GPIO_LOAD_CTL_Pin, GPIO_PIN_RESET);
+	loadState = 0;
 }
 void do_nothing( void ){
     printf("do_nothing\n");
