@@ -31,24 +31,13 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum {
-	VBAT_LOW,
-	VBAT_OK,
-	VBAT_HIGH,
-	VSOL_LOW,
-	VSOL_OK,
-	IBAT_LOW,
-	NOTHING,
-	MAX_EVENT
-} Event;
-typedef enum {
-	START, IDLE, CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE
-} State;
-typedef void (*Action)(void);
+typedef enum { VBAT_LOW, VBAT_OK, VBAT_HIGH, VSOL_LOW, VSOL_OK, IBAT_LOW, NOTHING, MAX_EVENT } Event ;
+typedef enum { START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE } State ;
+typedef void (* Action ) ( void) ;
 typedef struct {
-	Action to_do; // function pointer to current-state action
-	State next_state; // next-state enumerator
-} Table_Cell;
+	Action to_do ; // function pointer to current-state action
+	State next_state ; // next-state enumerator
+} Table_Cell ;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -74,10 +63,6 @@ typedef struct {
 #define IBAT_SCALE 4.029008864
 #define ILOAD_SCALE 8.058017728
 
-#define DVDB 100
-#define DIDB 5
-#define IVDB 0.03
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -99,12 +84,11 @@ DMA_HandleTypeDef hdma_usart1_tx;
 
 /* USER CODE BEGIN PV */
 char aTxBuffer[60];
-uint8_t aHeaderBuffer[] =
-		"Event,State,Duty_Cycle,Voltage_Solar,Current_Solar,Voltage_Batter,Current_Battery\n";
+uint8_t aHeaderBuffer[] = "Event,State,Duty_Cycle,Voltage_Solar,Current_Solar,Voltage_Batter,Current_Battery\n";
 uint8_t adc_conv_complt_flag;
 uint32_t aResultDMA[5];
-uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer) / sizeof(*aTxBuffer)) - 1;
-uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer) / sizeof(*aTxBuffer)) - 1;
+uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
+uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
 uint16_t v_sol, v_bat, i_sol, i_bat, i_load;
 uint8_t loadState = 0;
 uint8_t refTim = 0;
@@ -132,43 +116,30 @@ static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static int PWM_DC_Step(int dir, int size);
 static int inc_Con(void);
-static void do_nothing(void);
-static void pwm_on(void);
-static void pwm_off(void);
-static void charge_t(void);
-static void charge_f(void);
-static void update_inputs(void);
-static Event update_events(State current_s);
-static void load_on(void);
-static void load_off(void);
+static void do_nothing( void );
+static void pwm_on( void );
+static void pwm_off( void );
+static void charge_t ( void );
+static void charge_f ( void );
+static void update_inputs( void );
+static Event update_events( State current_s );
+static void load_on ( void );
+static void load_off ( void );
 static void refreshDisplay(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-Table_Cell state_table[MAX_STATE][MAX_EVENT] = {
-/*[0] VBAT_LOW            [1] VBAT_OK           [2] VBAT_HIGH           [3] VSOL_LOW            [4] VSOL_OK            5] IBAT_LOW             [6] NOTHING <--EVENTS |                  STATES */
-{ { do_nothing, START }, { load_on, IDLE }, { do_nothing, START }, { do_nothing,
-		START }, { pwm_on, CHARGE_M }, { do_nothing, START }, { do_nothing,
-		START } },             // START
-		{ { load_off, START }, { do_nothing, IDLE }, { do_nothing, IDLE }, {
-				do_nothing, IDLE }, { pwm_on, CHARGE_M }, { do_nothing, IDLE },
-				{ do_nothing, IDLE } },                   // IDLE
-		{ { load_off, CHARGE_M }, { load_on, CHARGE_M },
-				{ do_nothing, CHARGE_T }, { pwm_off, IDLE }, { do_nothing,
-						CHARGE_M }, { do_nothing, CHARGE_M }, { do_nothing,
-						CHARGE_M } }, // CHARGE_M
-		{ { load_off, CHARGE_M }, { do_nothing, CHARGE_T }, { do_nothing,
-				CHARGE_T }, { pwm_off, IDLE }, { do_nothing, CHARGE_T }, {
-				do_nothing, CHARGE_F }, { do_nothing, CHARGE_T } }, // CHARGE_T
-		{ { load_off, CHARGE_M }, { do_nothing, CHARGE_F }, { do_nothing,
-				CHARGE_F }, { pwm_off, IDLE }, { do_nothing, CHARGE_F }, {
-				do_nothing, CHARGE_F }, { do_nothing, CHARGE_F } } // CHARGE_F
-};
-const char *event_names[] = { "VBAT_LOW", "VBAT_OK", "VBAT_HIGH", "VSOL_LOW",
-		"VSOL_OK", "IBAT_LOW", "NOTHING" };
-const char *state_names[] = { "START", "IDLE", "CHARGE_M", "CHARGE_T",
-		"CHARGE_F", "MAX_STATE" };
+Table_Cell state_table [ MAX_STATE ][ MAX_EVENT ] = {
+	/*[0] VBAT_LOW            [1] VBAT_OK           [2] VBAT_HIGH           [3] VSOL_LOW            [4] VSOL_OK            5] IBAT_LOW             [6] NOTHING <--EVENTS |                  STATES */
+	{ { do_nothing , START }, {  load_on , IDLE }, { do_nothing , START }, { do_nothing , START }, { pwm_on , CHARGE_M }, { do_nothing , START }, { do_nothing , START }  } ,             // START
+	{ { load_off , START }, { do_nothing , IDLE }, { do_nothing , IDLE }, { do_nothing , IDLE }, { pwm_on , CHARGE_M }, { do_nothing , IDLE } , { do_nothing , IDLE } },                   // IDLE
+	{ { load_off , CHARGE_M }, { load_on , CHARGE_M }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_M }, { do_nothing , CHARGE_M} , { do_nothing , CHARGE_M } }, // CHARGE_M
+	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_T  }, { do_nothing , CHARGE_T }, { pwm_off , IDLE }, { do_nothing , CHARGE_T }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_T } } ,// CHARGE_T
+	{ { load_off , CHARGE_M }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F }, { pwm_off , IDLE }, { do_nothing , CHARGE_F }, { do_nothing , CHARGE_F } , { do_nothing , CHARGE_F } } // CHARGE_F
+	};
+const char* event_names[] = { "VBAT_LOW", "VBAT_OK", "VBAT_HIGH", "VSOL_LOW", "VSOL_OK", "IBAT_LOW", "NOTHING"};
+const char* state_names[] = { "START", "IDLE" , "CHARGE_M", "CHARGE_T", "CHARGE_F", "MAX_STATE" };
 /*
 /* USER CODE END 0 */
 
@@ -181,10 +152,10 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 	/* State machine variables*/
-	Table_Cell state_cell;
-	Event current_event;
-	State current_state;
-	current_state = START; // initial state
+    Table_Cell state_cell ;
+    Event current_event ;
+    State current_state ;
+    current_state = START ; // initial state
 
 	int numWritten;
   /* USER CODE END 1 */
@@ -212,12 +183,8 @@ int main(void)
   MX_TIM6_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-	BSP_EPD_Init();
-	refreshDisplay();
-	HAL_Delay(1000);
-	update_inputs();
-	oldVolt = v_sol;
-	oldCurrent = i_sol;
+  BSP_EPD_Init();
+  refreshDisplay();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -229,39 +196,35 @@ int main(void)
 //	  }
 //	  HAL_Delay(1000);
 	while (1) {
-//		numWritten = snprintf(aTxBuffer, TXBUFFERSIZE,
-//				"%s,%s,%lu,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state],
-//				event_names[current_event], TIM21->CCR1, v_sol, i_sol, v_bat,
-//				i_bat, i_load);
-//		numWritten = snprintf(aTxBuffer, TXBUFFERSIZE, "%i,%i,%f,%f,%i,%i\n",
-//			dI, dV, dIdV, IV, voltage, current);
-//		if (HAL_UART_Transmit_DMA(&huart1, (uint8_t*) aTxBuffer, TXBUFFERSIZE)
-//				!= HAL_OK) {
-//			Error_Handler();
-//		}
+		//numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, v_sol, i_sol, v_bat, i_bat, i_load);
+		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%i,%i,%f,%f,%i,%i\n", dI, dV, dIdV, IV, voltage, current);
+		if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, TXBUFFERSIZE)!= HAL_OK)
+		  {
+		    Error_Handler();
+		  }
 		//HAL_Delay(1000);
 
 		current_event = update_events(current_state);
-		state_cell = state_table[current_state][current_event];
-		state_cell.to_do(); // execute the appropriate action
-		current_state = state_cell.next_state; // transition to the new state
-		switch (current_state) {
-		case CHARGE_M:
-			int result = inc_Con();
-			break;
-		case CHARGE_T:
-			charge_t();
-			break;
-		case CHARGE_F:
-			charge_f();
-			break;
-		default:
-			break;
+        state_cell = state_table [ current_state ][ current_event ];
+        state_cell.to_do() ; // execute the appropriate action
+        current_state = state_cell.next_state ; // transition to the new state
+		switch(current_state){
+			case CHARGE_M:
+				int result = inc_Con();
+				break;
+			case CHARGE_T:
+				charge_t();
+				break;
+			case CHARGE_F:
+				charge_f();
+				break;
+			default:
+				break;
 		}
 		refTim++;
-		if (refTim >= 2) {
-			refreshDisplay();
-			refTim = 0;
+		if (refTim >= 2){
+		refreshDisplay();
+		refTim = 0;
 		}
 	}
     /* USER CODE END WHILE */
@@ -404,7 +367,7 @@ static void MX_ADC_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC_Init 2 */
-	HAL_ADCEx_Calibration_Start(&hadc, ADC_SINGLE_ENDED);
+  HAL_ADCEx_Calibration_Start(&hadc, ADC_SINGLE_ENDED);
 
   /* USER CODE END ADC_Init 2 */
 
@@ -443,6 +406,7 @@ static void MX_SPI1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SPI1_Init 2 */
+
 
   /* USER CODE END SPI1_Init 2 */
 
@@ -578,6 +542,7 @@ static void MX_USART1_UART_Init(void)
   }
   /* USER CODE BEGIN USART1_Init 2 */
 
+
   /* USER CODE END USART1_Init 2 */
 
 }
@@ -689,105 +654,85 @@ static int inc_Con(void) {
 	char exit = 0;
 	char status = 0;
 	char state = 0;
-//	int dV = 0;
-//	int dI = 0;
-//	float dIdV = 0;
-//	float IV = 0;
-//	uint16_t oldVolt = v_sol;
-//	uint16_t oldCurrent = i_sol;
-	HAL_Delay(500);
+	//int dV = 0;
+	//int dI = 0;
+	//float dIdV = 0;
+	//float IV = 0;
 	update_inputs();
-//	uint16_t voltage = v_sol;
-//	uint16_t current = i_sol;
-	voltage = v_sol;
-	current = i_sol;
-	while (current <= 200){ //if current less than ~400mA then increase duty cycle by ~10%
-		status = PWM_DC_Step(1,14);
-		oldCurrent = current;
-		HAL_Delay(20);
-		update_inputs();
-		current = i_sol;
-	}
-	dV = voltage - oldVolt;
-	dI = current - oldCurrent;
-	if (dV >= (-DVDB) && dV <= DVDB) {
-		dV = 0;
-	}
-	if (dI >= (-DIDB) && dI <= DIDB) {
-		dI = 0;
-	}
-	if (dV == 0) {
-		dIdV = 10000; //arbitrarily 10k to simulate inf state when dV = 0
-	} else {
-		dIdV = (float) dI / (float) dV;
-	}
-	IV = -(float) current / (float) voltage;
-//	if (IV >= -0.035 && IV <= -0.001) {
-//		IV = 0;
-//	}
-
-	while (exit == 0) {
-		switch (state) {
-		case 0:
-			if (dV == 0) {
-				state = 1;
-				break;
-			} else {
-				state = 2;
-				break;
-			}
-		case 1:
-			if (dI == 0) {
-				state = 0;
-				status = 0;
-				exit = 1;
-				break;
-			} else {
-				state = 3;
-				break;
-			}
-		case 2:
-			if (dI / dV == IV) {
-				state = 0;
-				status = 0;
-				exit = 1;
-				break;
-			} else {
-				state = 4;
-				break;
-			}
-		case 3:
-			if (dI > 0) {
-				status = PWM_DC_Step(1, 20);
-				state = 0;
-				exit = 1;
-				break;
-			} else {
-				status = PWM_DC_Step(0, 20);
-				state = 0;
-				exit = 1;
-				break;
-			}
-		case 4:
-			if (dIdV > (IV+IVDB)) {
-				status = PWM_DC_Step(0, 20);
-				state = 0;
-				exit = 1;
-				break;
-			} else {
-				status = PWM_DC_Step(1, 20);
-				state = 0;
-				exit = 1;
-				break;
-			}
-		default:
-			status = 1;
-			exit = 1;
-			break;
-		}
-	}
+	//uint16_t  oldVolt = v_sol;
+	//uint16_t  oldCurrent = i_sol;
 	oldVolt = v_sol;
 	oldCurrent = i_sol;
+	HAL_Delay(500);
+	update_inputs();
+	//uint16_t voltage = v_sol;
+	//uint16_t current = i_sol;
+	voltage = v_sol;
+	current = i_sol;
+	dV = voltage - oldVolt;
+	dI = current - oldCurrent;
+	dIdV = (float)dI/(float)dV;
+	IV = -(float)current / (float)voltage;
+	while (exit == 0){
+		switch (state) {
+			case 0:
+				if (dV == 0) {
+					state = 1;
+					break;
+				} else {
+					state = 2;
+					break;
+				}
+			case 1:
+				if (dI == 0) {
+					state = 0;
+					status = 0;
+					exit = 1;
+					break;
+				} else {
+					state = 3;
+					break;
+				}
+			case 2:
+				if ((int)(dIdV*100)==(int)(IV*100)) {
+					state = 0;
+					status = 0;
+					exit = 1;
+					break;
+				} else {
+					state = 4;
+					break;
+				}
+			case 3:
+				if (dI > 0) {
+					//status = PWM_DC_Step(1, 7);
+					state = 0;
+					exit = 1;
+					break;
+				} else {
+					//status = PWM_DC_Step(0, 7);
+					state = 0;
+					exit = 1;
+					break;
+				}
+			case 4:
+				if ((int)(dIdV*1000)>(int)(IV*1000)) {
+					//status = PWM_DC_Step(0, 7);
+					state = 0;
+					exit = 1;
+					break;
+				} else {
+					//status = PWM_DC_Step(1, 7);
+					state = 0;
+					exit = 1;
+					break;
+				}
+			default:
+				status = 1;
+				exit = 1;
+				break;
+		}
+	}
 	return (status);
 }
 
@@ -843,138 +788,148 @@ void refreshDisplay(void) {
 		BSP_EPD_DisplayStringAt(95, 12, "|Batt Full", LEFT_MODE);
 		BSP_EPD_DrawImage(200, 6, 30, 45, batFull);
 	}
-	if (loadState == 0) {
+	if (loadState == 0){
 		BSP_EPD_DisplayStringAt(185, 12, "|Load Off", LEFT_MODE);
-	} else {
+	}
+	else {
 		BSP_EPD_DisplayStringAt(185, 12, "|Load On", LEFT_MODE);
 	}
 	BSP_EPD_RefreshDisplay();
 }
 
 /*    [0] VBAT_LOW    [1] VBAT_OK   [2] VBAT_HIGH  [3] VSOL_LOW     [4] VSOL_OK    [5] IBAT_LOW     <--EVENTS | STATES */
-static Event update_events(State current_s) { // START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE
+static Event update_events( State current_s ){ // START, IDLE , CHARGE_M, CHARGE_T, CHARGE_F, MAX_STATE
 	update_inputs();
 	Event return_event = NOTHING;
-	switch (current_s) {
-	case START:
-		if (v_bat >= VBAT_OK_VOLTAGE) {
-			return_event = VBAT_OK;
-		} else if (v_sol >= VSOL_OK_VOLTAGE) {
-			return_event = VSOL_OK;
-		}
-		break;
-	case IDLE:
-		if (v_bat < VBAT_LOW_VOLTAGE) {
-			return_event = VBAT_LOW;
-		} else if (v_sol >= VSOL_OK_VOLTAGE) {
-			return_event = VSOL_OK;
-		}
-		break;
-	case CHARGE_M:
-		if (v_bat >= VBAT_HIGH_VOLTAGE) {
-			return_event = VBAT_HIGH;
-		} else if (v_sol < VSOL_OK_VOLTAGE) {
-			return_event = VSOL_LOW;
-		} else if (v_bat >= VBAT_OK_VOLTAGE) {
-			return_event = VBAT_OK;
-		} else if (v_bat < VBAT_LOW_VOLTAGE) {
-			return_event = VBAT_LOW;
-		}
-		break;
-	case CHARGE_T:
-		if (i_bat < IBAT_LOW_CURRENT) {
-			return_event = IBAT_LOW;
-		} else if (v_sol < VSOL_OK_VOLTAGE) {
-			return_event = VSOL_LOW;
-		} else if (v_bat < VBAT_LOW_VOLTAGE) {
-			return_event = VBAT_LOW;
-		}
-		break;
-	case CHARGE_F:
-		if (v_bat < VBAT_LOW_VOLTAGE) {
-			return_event = VBAT_LOW;
-		} else if (v_sol < VSOL_OK_VOLTAGE) {
-			return_event = VSOL_LOW;
-		}
-		break;
-	default:
-		return_event = NOTHING; // maybe add a fault state
-		break;
+	switch(current_s) {
+		case START:
+			if(v_bat >= VBAT_OK_VOLTAGE){
+				return_event=  VBAT_OK;
+			}
+			else if(v_sol >= VSOL_OK_VOLTAGE){
+				return_event = VSOL_OK;
+			}
+			break;
+		case IDLE:
+			if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
+			}
+			else if(v_sol >= VSOL_OK_VOLTAGE){
+				return_event = VSOL_OK;
+			}
+			break;
+		case CHARGE_M:
+			if(v_bat >= VBAT_HIGH_VOLTAGE){
+				return_event = VBAT_HIGH;
+			}
+			else if(v_sol < VSOL_OK_VOLTAGE){
+				return_event = VSOL_LOW;
+			}
+			else if(v_bat >= VBAT_OK_VOLTAGE){
+				return_event = VBAT_OK;
+			}
+			else if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
+			}
+			break;
+		case CHARGE_T:
+			if(i_bat < IBAT_LOW_CURRENT){
+				return_event = IBAT_LOW;
+			}
+			else if(v_sol < VSOL_OK_VOLTAGE){
+				return_event = VSOL_LOW;
+			}
+			else if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
+			}
+			break;
+		case CHARGE_F:
+			if(v_bat < VBAT_LOW_VOLTAGE){
+				return_event = VBAT_LOW;
+			}
+			else if(v_sol < VSOL_OK_VOLTAGE){
+				return_event = VSOL_LOW;
+			}
+			break;
+		default:
+			return_event = NOTHING; // maybe add a fault state
+			break;
 	}
 	return return_event;
 }
-void pwm_on(void) {
-	// Turn on PWM
+void pwm_on( void ){
+    // Turn on PWM
 	if (HAL_TIM_PWM_Start(&htim21, TIM_CHANNEL_1) != HAL_OK) {
 		/* Starting Error */
 		Error_Handler();
 	}
 }
-void pwm_off(void) {
-	// Turn on PWM
+void pwm_off( void ){
+    // Turn on PWM
 	if (HAL_TIM_PWM_Stop(&htim21, TIM_CHANNEL_1) != HAL_OK) {
 		/* Starting Error */
 		Error_Handler();
 	}
 }
-void load_on(void) {
-	// Turn load on GPIO PIN
+void load_on ( void ){
+    // Turn load on GPIO PIN
 	HAL_GPIO_WritePin(GPIOB, GPIO_LOAD_CTL_Pin, GPIO_PIN_SET);
 	loadState = 1;
 }
-void load_off(void) {
-	// Turn load off GPIO PIN
+void load_off ( void ){
+    // Turn load off GPIO PIN
 	HAL_GPIO_WritePin(GPIOB, GPIO_LOAD_CTL_Pin, GPIO_PIN_RESET);
 	loadState = 0;
 }
-void do_nothing(void) {
-	printf("do_nothing\n");
+void do_nothing( void ){
+    printf("do_nothing\n");
 }
-void charge_t(void) {
+void charge_t ( void ){
 	float error;
 	float step;
 	char status;
 	update_inputs();
 	error = VOLTAGE_TOPPING - v_bat;
 	step = abs(round(error));
-	if (step > 64) {
+	if(step>64){
 		step = 64;
 	}
-	if (error > 0) {
+	if(error > 0){
 		status = PWM_DC_Step(1, step);
-	} else if (error < 0) {
+	}
+	else if (error < 0){
 		status = PWM_DC_Step(0, step);
 	}
 }
-void charge_f(void) {
+void charge_f ( void ){
 	float error;
 	float step;
 	char status;
 	update_inputs();
 	error = VOLTAGE_FLOAT - v_bat;
 	step = abs(round(error));
-	if (step > 64) {
+	if(step>64){
 		step = 64;
 	}
-	if (error > 0) {
+	if(error > 0){
 		status = PWM_DC_Step(1, step);
-	} else if (error < 0) {
+	}
+	else if (error < 0){
 		status = PWM_DC_Step(0, step);
 	}
 }
-void update_inputs(void) {
+void update_inputs( void ){
 	uint8_t sample_factor = 7;
-	uint16_t NSAMPLES = 1 << sample_factor;
+	uint16_t NSAMPLES = 1<<sample_factor;
 	uint32_t sum0 = 0;
 	uint32_t sum1 = 0;
 	uint32_t sum2 = 0;
 	uint32_t sum3 = 0;
 	uint32_t sum4 = 0;
 	HAL_ADC_Start_DMA(&hadc, aResultDMA, 5);
-	for (uint16_t i = 0; i < NSAMPLES; i++) {
+	for(uint16_t i = 0; i < NSAMPLES; i++){
 		adc_conv_complt_flag = 1;
-		while (adc_conv_complt_flag) {
-		}; // wait for ADC conversion to complete
+		while(adc_conv_complt_flag){}; // wait for ADC conversion to complete
 		sum0 += aResultDMA[0];
 		sum1 += aResultDMA[1];
 		sum2 += aResultDMA[2];
@@ -982,7 +937,7 @@ void update_inputs(void) {
 		sum4 += aResultDMA[4];
 	}
 	HAL_ADC_Stop_DMA(&hadc);
-	// update inputs from ADC values
+    // update inputs from ADC values
 	v_sol = (sum0 >> sample_factor);
 	i_sol = (sum1 >> sample_factor);
 	v_bat = (sum2 >> sample_factor);
@@ -990,12 +945,12 @@ void update_inputs(void) {
 	i_load = (sum4 >> sample_factor);
 }
 
-void USARTx_IRQHandler(void) {
+void USARTx_IRQHandler(void){
 	HAL_UART_IRQHandler(&huart1);
 	return;
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 	adc_conv_complt_flag = 0;
 	return;
 }
