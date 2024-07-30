@@ -56,9 +56,10 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ECE499/STM32L0_Project1/Drivers/BSP/STM32L0538-Discovery}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ECE499/STM32L0_Project1/Drivers/BSP/Components}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ECE499/STM32L0_Project1/Drivers/BSP/Components/gdem0213b74}&quot;"/>
-
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ECE499/STM32L0_Project1/Drivers/BSP/Components/gde021a1}&quot;"/>
-
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Drivers/BSP/Components/gdem0213b74}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Drivers/BSP/Components/Common}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Drivers/BSP/STM32L0538-Discovery}&quot;"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1884653963" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
