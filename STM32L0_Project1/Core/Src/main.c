@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 #include "stm32l0538_discovery_epd.h"
 #include "stm32l0538_discovery.h"
 #include "images.c"
@@ -84,10 +85,10 @@ DMA_HandleTypeDef hdma_usart1_tx;
 
 /* USER CODE BEGIN PV */
 char aTxBuffer[100];
-uint8_t aHeaderBuffer[] = "Event,State,Duty_Cycle,Voltage_Solar,Current_Solar,Voltage_Batter,Current_Battery\n";
+//uint8_t aHeaderBuffer[] = "Event,State,Duty_Cycle,Voltage_Solar,Current_Solar,Voltage_Batter,Current_Battery\n";
 uint8_t adc_conv_complt_flag;
 uint32_t aResultDMA[5];
-uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
+//uint16_t HEADERBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
 uint16_t TXBUFFERSIZE = (sizeof(aTxBuffer)/sizeof(*aTxBuffer)) - 1;
 uint16_t v_sol, v_bat, i_sol, i_bat, i_load;
 uint8_t loadState = 0;
@@ -115,6 +116,7 @@ static Event update_events( State current_s );
 static void load_on ( void );
 static void load_off ( void );
 static void refreshDisplay(void);
+static void logger(State current_state, Event current_event);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -141,9 +143,9 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 	/* State machine variables*/
-    Table_Cell state_cell ;
-    Event current_event ;
-    State current_state ;
+    Table_Cell state_cell;
+    Event current_event, last_event;
+    State current_state, last_state;
     current_state = START ; // initial state
 
 	int numWritten;
@@ -179,23 +181,19 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-//	  if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aHeaderBuffer, HEADERBUFFERSIZE)!= HAL_OK)
-//	  {
-//	    Error_Handler();
-//	  }
-//	  HAL_Delay(1000);
 	while (1) {
-		numWritten = snprintf ( aTxBuffer, TXBUFFERSIZE, "%s,%s,%lu,%lu,%lu,%lu,%lu,%lu\n", state_names[current_state], event_names[current_event], TIM21->CCR1, v_sol, i_sol, v_bat, i_bat, i_load);
-		if(HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, TXBUFFERSIZE)!= HAL_OK)
-		  {
-		    Error_Handler();
-		  }
-		//HAL_Delay(1000);
 
 		current_event = update_events(current_state);
+
+		if(current_event != last_event){
+			logger(current_state, current_event);
+			last_event = current_event;
+		}
+
         state_cell = state_table [ current_state ][ current_event ];
         state_cell.to_do() ; // execute the appropriate action
         current_state = state_cell.next_state ; // transition to the new state
+
 		switch(current_state){
 			case CHARGE_M:
 				int result = inc_Con();
@@ -921,6 +919,12 @@ void update_inputs( void ){
 	v_bat = (sum2 >> sample_factor);
 	i_bat = (sum3 >> sample_factor);
 	i_load = (sum4 >> sample_factor);
+}
+
+static void logger(State current_state, Event current_event){
+	memset(aTxBuffer,0,strlen(aTxBuffer));
+	sprintf(aTxBuffer, "%s,%s,%lu,%u,%u,%u,%u,%u\n", state_names[current_state], event_names[current_event], TIM21->CCR1, v_sol, i_sol, v_bat, i_bat, i_load);
+	HAL_UART_Transmit_DMA(&huart1, (uint8_t*)aTxBuffer, strlen(aTxBuffer));
 }
 
 void USARTx_IRQHandler(void){
