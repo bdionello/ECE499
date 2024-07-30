@@ -1,10 +1,12 @@
 @startuml UML
 
 scale 600 width
+START : test_solar()
+IDLE : test_solar()
 [*] -> START
 START --> IDLE : VBAT_OK/\nload_on()
-START --> CHARGE : VSOL_OK
-IDLE --> CHARGE : VSOL_OK
+START --> CHARGE : SOL_OK
+IDLE --> CHARGE : SOL_OK
 IDLE --> START : VBAT_LOW/\nload_off()
 state CHARGE {
     MPPT : charge_mppt()
